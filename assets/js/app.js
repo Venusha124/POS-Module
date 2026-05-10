@@ -101,13 +101,16 @@ document.addEventListener('DOMContentLoaded', () => {
         '/customers': renderCustomers,
         '/users': renderUsers,
         '/kitchen': renderKitchen,
+        '/serving': renderServing,
         '/settings': renderSettings,
         '/help': renderHelp
     };
 
     const roleAccess = {
-        'admin': ['/dashboard', '/order-line', '/history', '/tables', '/dishes', '/customers', '/users', '/kitchen', '/settings', '/help'],
-        'cashier': ['/order-line', '/history', '/tables', '/customers'],
+        'admin': ['/dashboard', '/order-line', '/serving', '/history', '/tables', '/dishes', '/customers', '/users', '/kitchen', '/settings', '/help'],
+        'manager': ['/dashboard', '/order-line', '/serving', '/history', '/tables', '/dishes', '/customers', '/kitchen', '/help'],
+        'cashier': ['/order-line', '/serving', '/history', '/tables', '/customers'],
+        'waiter': ['/order-line', '/serving', '/tables'],
         'kitchen': ['/kitchen']
     };
 
@@ -136,7 +139,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const order = store.data.orders.find(o => o.id === data.id);
         if (order) order.status = data.status;
         
-        if (window.location.hash.includes('/kitchen') || window.location.hash.includes('/dashboard')) {
+        if (data.status === 'Ready' && ['waiter', 'admin', 'manager'].includes(store.data.currentUser.role)) {
+            // Auto-navigate to serving if they aren't busy taking an order
+            if (store.data.cart.length === 0) {
+                window.location.hash = '#/serving';
+            } else {
+                window.showToast(`Order ${data.id} is Ready! Check the Serving tab.`, 'success');
+            }
+        } else if (data.status === 'Ready' && store.data.currentUser.role !== 'kitchen') {
+            window.showToast(`Order ${data.id} is Ready!`, 'success');
+        }
+
+        if (window.location.hash.includes('/kitchen') || window.location.hash.includes('/dashboard') || window.location.hash.includes('/serving')) {
             handleRoute(); 
         }
     });
@@ -195,6 +209,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         }
+        // Update Navigation Badges
+        const updateNavBadges = () => {
+            const readyCount = store.data.orders.filter(o => o.status === 'Ready').length;
+            const prepCount = store.data.orders.filter(o => o.status === 'Preparing').length;
+            
+            navItems.forEach(item => {
+                const route = item.getAttribute('data-route');
+                let badge = item.querySelector('.nav-badge');
+                
+                if (route === '/serving' && readyCount > 0) {
+                    if (!badge) {
+                        badge = document.createElement('span');
+                        badge.className = 'nav-badge';
+                        badge.style = 'background:#00f2fe; color:#000; font-size:10px; font-weight:800; padding:2px 8px; border-radius:10px; margin-left:auto; box-shadow:0 0 10px rgba(0,242,254,0.4);';
+                        item.appendChild(badge);
+                    }
+                    badge.textContent = readyCount;
+                } else if (route === '/kitchen' && prepCount > 0) {
+                    if (!badge) {
+                        badge = document.createElement('span');
+                        badge.className = 'nav-badge';
+                        badge.style = 'background:#f59e0b; color:#000; font-size:10px; font-weight:800; padding:2px 8px; border-radius:10px; margin-left:auto; box-shadow:0 0 10px rgba(245,158,11,0.4);';
+                        item.appendChild(badge);
+                    }
+                    badge.textContent = prepCount;
+                } else if (badge) {
+                    badge.remove();
+                }
+            });
+        };
+        updateNavBadges();
 
         // Render View
         const renderer = routes[hash];
@@ -374,6 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const weeklyTrends = data.weeklyTrends || [];
             const peakHours = data.peakHours || [];
             const lowStockAlerts = data.lowStockAlerts || [];
+            const currency = store.data.settings.currency_symbol || 'Rs.';
 
             // Calculate Sales Trend (Simplified)
             const trend = weeklyTrends.length >= 2 
@@ -388,7 +434,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             <p style="color:var(--text-muted); font-size:15px;">Real-time performance analytics for your restaurant.</p>
                         </div>
                         <div style="display:flex; gap:12px;">
-                            <button onclick="location.hash='#/order-line'" class="btn btn-primary" style="padding:10px 20px; font-size:13px;"><i class="fa-solid fa-plus"></i> NEW ORDER</button>
                             ${lowStockAlerts.length > 0 ? `
                                 <div style="background:rgba(239, 68, 68, 0.1); color:#ef4444; border:1px solid rgba(239, 68, 68, 0.2); padding:10px 20px; border-radius:14px; display:flex; align-items:center; gap:10px; font-weight:700; font-size:12px;">
                                     <i class="fa-solid fa-triangle-exclamation"></i> ${lowStockAlerts.length} STOCK ALERTS
@@ -403,7 +448,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="stat-icon" style="background:var(--primary); color:#000;"><i class="fa-solid fa-dollar-sign"></i></div>
                             <div class="stat-info">
                                 <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:4px;">Overall Revenue</h4>
-                                <div class="stat-value" style="font-size:32px;">$${Number(data.totalRevenue).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                                <div class="stat-value" style="font-size:32px;">${currency}${Number(data.totalRevenue).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                                 <div class="stat-trend ${trend >= 0 ? 'positive' : 'negative'}" style="font-size:13px; font-weight:700; display:flex; align-items:center; gap:4px; margin-top:4px;">
                                     <i class="fa-solid fa-arrow-trend-${trend >= 0 ? 'up' : 'down'}"></i> ${trend}% <span style="font-weight:500; opacity:0.7;">vs last week</span>
                                 </div>
@@ -415,7 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="stat-icon" style="background:#6366f1; color:#fff;"><i class="fa-solid fa-chart-simple"></i></div>
                             <div class="stat-info">
                                 <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:4px;">Today's Sales</h4>
-                                <div class="stat-value" style="font-size:32px;">$${Number(data.todayRevenue).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                                <div class="stat-value" style="font-size:32px;">${currency}${Number(data.todayRevenue).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                                 <div style="font-size:13px; color:#6366f1; font-weight:700; margin-top:4px; display:flex; align-items:center; gap:6px;">
                                     <span style="width:6px; height:6px; border-radius:50%; background:#6366f1; animation:pulse 2s infinite;"></span> LIVE TRACKING
                                 </div>
@@ -470,7 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                                         <span style="width:24px; height:24px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.05); border-radius:6px; font-size:11px; color:var(--text-muted);">${idx + 1}</span>
                                                         ${item.name}
                                                     </div>
-                                                    <div style="font-weight:800; color:var(--primary); font-size:14px;">$${(item.revenue || 0).toFixed(2)}</div>
+                                                    <div style="font-weight:800; color:var(--primary); font-size:14px;">${currency}${(item.revenue || 0).toFixed(2)}</div>
                                                 </div>
                                                 <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:10px; overflow:hidden;">
                                                     <div style="height:100%; width:${percentage}%; background:linear-gradient(90deg, var(--primary) 0%, #6366f1 100%); border-radius:10px;"></div>
@@ -551,7 +596,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             borderRadius: 10,
                             displayColors: false,
                             callbacks: {
-                                label: (context) => `$${context.parsed.y.toLocaleString()}`
+                                label: (context) => `${currency}${context.parsed.y.toLocaleString()}`
                             }
                         }
                     },
@@ -589,6 +634,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let modalDish = null;
         let modalMode = 'add';
         let modalQty = 1;
+        const currency = store.data.settings.currency_symbol || 'Rs.';
 
         // 1. Render Main Layout Shell
         container.innerHTML = `
@@ -612,9 +658,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="cart-items"></div>
                     <div class="cart-summary">
-                        <div class="summary-row"><span>Subtotal</span><span class="summary-subtotal">$0.00</span></div>
-                        <div class="summary-row"><span>Tax (10%)</span><span class="summary-tax">$0.00</span></div>
-                        <div class="summary-total"><span>Total</span><span class="summary-total-val">$0.00</span></div>
+                        <div class="summary-row"><span>Subtotal</span><span class="summary-subtotal">${currency}0.00</span></div>
+                        <div class="summary-row"><span>Tax (10%)</span><span class="summary-tax">${currency}0.00</span></div>
+                        <div class="summary-total"><span>Total</span><span class="summary-total-val">${currency}0.00</span></div>
                         <div class="order-type-toggle">
                             <button class="type-btn active" data-type="Dine In">Dine In</button>
                             <button class="type-btn" data-type="Takeaway">Takeaway</button>
@@ -655,7 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="modal-content" style="width: 480px;">
                     <h3>Finalize Payment</h3>
                     <div class="payment-total-box" style="background:var(--primary-light); padding:20px; border-radius:12px; text-align:center; margin:24px 0;">
-                        <span id="paymentModalTotal" style="font-size:32px; font-weight:800; color:var(--primary);">$0.00</span>
+                        <span id="paymentModalTotal" style="font-size:32px; font-weight:800; color:var(--primary);">${currency}0.00</span>
                     </div>
                     <div class="payment-options" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:20px;">
                         <button class="payment-opt-btn active" data-method="Cash"><span>CASH</span></button>
@@ -722,9 +768,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (cartItems.length === 0) {
                 container_items.innerHTML = '<div class="cart-empty">Cart is empty</div>';
-                container.querySelector('.summary-subtotal').textContent = '$0.00';
-                container.querySelector('.summary-tax').textContent = '$0.00';
-                container.querySelector('.summary-total-val').textContent = '$0.00';
+                container.querySelector('.summary-subtotal').textContent = currency + '0.00';
+                container.querySelector('.summary-tax').textContent = currency + '0.00';
+                container.querySelector('.summary-total-val').textContent = currency + '0.00';
                 return;
             }
 
@@ -733,7 +779,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <img src="${item.dish.image}" class="cart-item-img">
                     <div class="cart-item-info">
                         <div class="cart-item-name">${item.dish.name}</div>
-                        <div class="cart-item-price">$${(item.dish.price * item.qty).toFixed(2)}</div>
+                        <div class="cart-item-price">${currency}${(item.dish.price * item.qty).toFixed(2)}</div>
                     </div>
                     <div class="cart-item-qty">x${item.qty}</div>
                 </div>
@@ -743,9 +789,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const subtotal = cartItems.reduce((sum, item) => sum + (item.dish.price * item.qty), 0);
             const total = subtotal * (1 + taxRate);
             
-            container.querySelector('.summary-subtotal').textContent = '$' + subtotal.toFixed(2);
-            container.querySelector('.summary-tax').textContent = '$' + (subtotal * taxRate).toFixed(2);
-            container.querySelector('.summary-total-val').textContent = '$' + total.toFixed(2);
+            container.querySelector('.summary-subtotal').textContent = currency + subtotal.toFixed(2);
+            container.querySelector('.summary-tax').textContent = currency + (subtotal * taxRate).toFixed(2);
+            container.querySelector('.summary-total-val').textContent = currency + total.toFixed(2);
 
             // Re-bind item click in cart for edit
             container_items.querySelectorAll('.cart-item').forEach(el => {
@@ -786,7 +832,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="order-dish-card" data-dish='${JSON.stringify(dish)}'>
                     <img src="${dish.image}" class="order-dish-img">
                     <h4 class="order-dish-name">${dish.name}</h4>
-                    <div class="order-dish-price">$${dish.price.toFixed(2)}</div>
+                    <div class="order-dish-price">${currency}${dish.price.toFixed(2)}</div>
                 </div>
             `).join('');
 
@@ -1029,15 +1075,22 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Validate Card Details
             if (method === 'Card') {
-                const cName = document.getElementById('cardNameInput').value.trim();
-                const cNum = document.getElementById('cardNumInput').value.replace(/\s/g, '');
-                const cExp = document.getElementById('cardExpiryInput').value.trim();
-                const cCVV = document.getElementById('cardCVVInput').value.trim();
+                const cNameInput = document.getElementById('cardNameInput');
+                const cNumInput = document.getElementById('cardNumInput');
+                const cExpInput = document.getElementById('cardExpiryInput');
+                const cCVVInput = document.getElementById('cardCVVInput');
+                
+                const cName = cNameInput.value.trim();
+                const cNum = cNumInput.value.replace(/\s/g, '');
+                const cExp = cExpInput.value.trim();
+                const cCVV = cCVVInput.value.trim();
 
-                if (!cName) return window.showToast("Please enter Card Name", "error");
-                if (!/^\d{16}$/.test(cNum)) return window.showToast("Card Number must be 16 digits", "error");
-                if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(cExp)) return window.showToast("Expiry Date must be MM/YY", "error");
-                if (!/^\d{3,4}$/.test(cCVV)) return window.showToast("CVV must be 3 or 4 digits", "error");
+                window.clearValidations('#paymentModal');
+
+                if (!cName) { window.markInvalid('cardNameInput'); return window.showToast("Please enter Card Name", "error"); }
+                if (!/^\d{16}$/.test(cNum)) { window.markInvalid('cardNumInput'); return window.showToast("Card Number must be 16 digits", "error"); }
+                if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(cExp)) { window.markInvalid('cardExpiryInput'); return window.showToast("Expiry Date must be MM/YY", "error"); }
+                if (!/^\d{3,4}$/.test(cCVV)) { window.markInvalid('cardCVVInput'); return window.showToast("CVV must be 3 or 4 digits", "error"); }
             }
 
             const order = await store.placeOrder(store.data.currentOrderType, method, store.data.selectedTableId, store.data.selectedCustomerId);
@@ -1056,13 +1109,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 document.getElementById('receiptTarget').textContent = targetText;
 
-                document.getElementById('receiptItems').innerHTML = order.items.map(i => `<div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>${i.qty}x ${i.dish.name}</span> <span>$${(i.dish.price * i.qty).toFixed(2)}</span></div>`).join('');
+                document.getElementById('receiptItems').innerHTML = order.items.map(i => `<div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>${i.qty}x ${i.dish.name}</span> <span>${currency}${(i.dish.price * i.qty).toFixed(2)}</span></div>`).join('');
                 
                 const subtotal = order.items.reduce((sum, i) => sum + (i.dish.price * i.qty), 0);
                 const tax = subtotal * 0.1;
-                document.getElementById('receiptSubtotal').textContent = '$' + subtotal.toFixed(2);
-                document.getElementById('receiptTax').textContent = '$' + tax.toFixed(2);
-                document.getElementById('receiptTotal').textContent = '$' + order.total.toFixed(2);
+                document.getElementById('receiptSubtotal').textContent = currency + subtotal.toFixed(2);
+                document.getElementById('receiptTax').textContent = currency + tax.toFixed(2);
+                document.getElementById('receiptTotal').textContent = currency + order.total.toFixed(2);
                 document.getElementById('receiptModal').style.display = 'flex';
             }
         };
@@ -1129,9 +1182,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <div class="legend-item"><div class="legend-color legend-available"></div> Available</div>
                                 <div class="legend-item"><div class="legend-color legend-occupied"></div> Occupied</div>
                                 <div class="legend-item"><div class="legend-color legend-reserved"></div> Reserved</div>
+                                <div class="legend-item"><div class="legend-color legend-dirty"></div> Dirty</div>
                             </div>
                         </div>
-                        <button class="btn btn-primary" id="addTableBtn"><i class="fa-solid fa-plus"></i> Add New Table</button>
+                        ${['admin', 'manager'].includes(store.data.currentUser.role) ? '<button class="btn btn-primary" id="addTableBtn"><i class="fa-solid fa-plus"></i> Add New Table</button>' : ''}
                     </div>
 
                     <div class="floor-plan" style="position:relative; min-height:500px; background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--border-radius-lg); margin-top:20px; display:flex; flex-wrap:wrap; gap:20px; padding:20px;">
@@ -1139,9 +1193,16 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="table-obj status-${t.status.toLowerCase()}" style="position:relative; width:120px; height:120px; border-radius:12px; display:flex; flex-direction:column; justify-content:center; align-items:center; cursor:pointer;" data-id="${t.id}" data-name="${t.name}" data-seats="${t.seats}" data-status="${t.status}">
                                 <span class="table-name" style="font-weight:bold; font-size:18px;">${t.name}</span>
                                 <span class="table-seats" style="font-size:12px;">${t.seats} Seats</span>
+                                ${t.status === 'Dirty' ? `
+                                    <button class="clean-table-btn" data-id="${t.id}" style="margin-top:8px; background:var(--primary); border:none; color:black; padding:4px 8px; border-radius:6px; font-size:10px; font-weight:bold; cursor:pointer;">
+                                        <i class="fa-solid fa-broom"></i> Ready
+                                    </button>
+                                ` : ''}
                                 <div style="position:absolute; bottom:8px; display:flex; gap:4px;">
-                                    <button class="edit-table-btn" data-id="${t.id}" style="background:none; border:none; color:inherit; cursor:pointer; font-size:12px;"><i class="fa-solid fa-pen"></i></button>
-                                    <button class="delete-table-btn" data-id="${t.id}" style="background:none; border:none; color:inherit; cursor:pointer; font-size:12px;"><i class="fa-solid fa-trash"></i></button>
+                                    ${['admin', 'manager'].includes(store.data.currentUser.role) ? `
+                                        <button class="edit-table-btn" data-id="${t.id}" style="background:none; border:none; color:inherit; cursor:pointer; font-size:12px;"><i class="fa-solid fa-pen"></i></button>
+                                        <button class="delete-table-btn" data-id="${t.id}" style="background:none; border:none; color:inherit; cursor:pointer; font-size:12px;"><i class="fa-solid fa-trash"></i></button>
+                                    ` : ''}
                                 </div>
                             </div>
                         `).join('')}
@@ -1168,6 +1229,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <option value="Available">Available</option>
                                     <option value="Occupied">Occupied</option>
                                     <option value="Reserved">Reserved</option>
+                                    <option value="Dirty">Dirty</option>
                                 </select>
                             </div>
                             <div class="modal-actions">
@@ -1201,6 +1263,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.getElementById('tableModalTitle').textContent = 'Edit Table';
                     document.getElementById('statusGroup').style.display = 'block';
                     modal.style.display = 'flex';
+                });
+            });
+
+            // Clean Table Button
+            container.querySelectorAll('.clean-table-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const id = e.currentTarget.getAttribute('data-id');
+                    try {
+                        const res = await store.fetchAPI(`/tables/${id}/status`, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ status: 'Available' })
+                        });
+                        if (res.ok) {
+                            window.showToast("Table is now ready!");
+                            await store.init();
+                            renderTables(container);
+                        }
+                    } catch (err) {
+                        window.showToast("Failed to update table", "error");
+                    }
                 });
             });
 
@@ -1281,6 +1364,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const categories = store.getCategories();
         let currentCat = 'all';
+        const currency = store.data.settings.currency_symbol || 'Rs.';
 
         const drawView = () => {
             const dishes = store.getDishes(currentCat);
@@ -1308,7 +1392,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <h2>Manage Dishes</h2>
                                 <p style="color:var(--text-muted); font-size:14px; margin-top:4px;">Add, edit, or remove menu items.</p>
                             </div>
-                            <button class="btn btn-primary" id="addDishBtn"><i class="fa-solid fa-plus"></i> Add New Dish</button>
+                            ${['admin', 'manager'].includes(store.data.currentUser.role) ? '<button class="btn btn-primary" id="addDishBtn"><i class="fa-solid fa-plus"></i> Add New Dish</button>' : ''}
                         </div>
                         
                         <div class="dishes-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:20px;">
@@ -1317,11 +1401,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <img src="${d.image}" alt="${d.name}" style="width:100%; height:140px; object-fit:cover;">
                                     <div class="dish-details" style="padding:16px;">
                                         <div class="dish-name" style="font-weight:600; margin-bottom:4px;">${d.name}</div>
-                                        <div class="dish-price" style="color:var(--primary); font-weight:700;">$${d.price.toFixed(2)}</div>
-                                        <div style="margin-top:12px; display:flex; gap:8px;">
-                                            <button class="btn btn-outline edit-dish-btn" data-id="${d.id}" data-name="${d.name}" data-price="${d.price}" data-cat="${d.category_id}" data-img="${d.image}" style="flex:1; padding:6px; font-size:12px;">Edit</button>
-                                            <button class="btn btn-outline delete-dish-btn" data-id="${d.id}" style="padding:6px; font-size:12px; border-color:#ef4444; color:#ef4444;"><i class="fa-solid fa-trash"></i></button>
-                                        </div>
+                                        <div class="dish-price" style="color:var(--primary); font-weight:700;">${currency}${d.price.toFixed(2)}</div>
+                                        ${['admin', 'manager'].includes(store.data.currentUser.role) ? `
+                                            <div style="margin-top:12px; display:flex; gap:8px;">
+                                                <button class="btn btn-outline edit-dish-btn" data-id="${d.id}" data-name="${d.name}" data-price="${d.price}" data-cat="${d.category_id}" data-img="${d.image}" style="flex:1; padding:6px; font-size:12px;">Edit</button>
+                                                <button class="btn btn-outline delete-dish-btn" data-id="${d.id}" style="padding:6px; font-size:12px; border-color:#ef4444; color:#ef4444;"><i class="fa-solid fa-trash"></i></button>
+                                            </div>
+                                        ` : ''}
                                     </div>
                                 </div>
                             `).join('')}
@@ -1346,7 +1432,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </select>
                             </div>
                             <div class="form-group" style="margin-bottom: 12px;">
-                                <label>Price ($)</label>
+                                <label>Price (${currency})</label>
                                 <input type="number" step="0.01" id="dishPrice" required>
                             </div>
                             <div class="form-group" style="margin-bottom: 12px;">
@@ -1413,11 +1499,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 btn.addEventListener('click', (e) => {
                     const id = e.currentTarget.getAttribute('data-id');
                     window.showConfirm("Delete Dish", "Are you sure you want to delete this dish?", async () => {
-                        await fetch(`http://localhost:3000/api/dishes/${id}`, { method: 'DELETE' });
+                        await store.fetchAPI(`/dishes/${id}`, { method: 'DELETE' });
                         window.showToast("Dish deleted successfully");
                         await store.init();
                         drawView();
-                    });
+                    }, 'danger');
                 });
             });
 
@@ -1458,11 +1544,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const payload = { name, category_id, price, image };
 
                 try {
-                    const url = id ? `http://localhost:3000/api/dishes/${id}` : `http://localhost:3000/api/dishes`;
                     const method = id ? 'PUT' : 'POST';
-                    const res = await fetch(url, {
+                    const res = await store.fetchAPI(id ? `/dishes/${id}` : `/dishes`, {
                         method: method,
-                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
 
@@ -1760,7 +1844,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <label>Role</label>
                                 <select id="userRole" style="width: 100%; padding: 12px; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm);">
                                     <option value="admin">Admin</option>
+                                    <option value="manager">Manager</option>
                                     <option value="cashier">Cashier</option>
+                                    <option value="waiter">Waiter</option>
                                     <option value="kitchen">Kitchen</option>
                                 </select>
                             </div>
@@ -1811,8 +1897,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     const id = e.target.getAttribute('data-id');
                     const name = e.target.getAttribute('data-name');
                     window.showConfirm("Delete User", `Are you sure you want to delete ${name}?`, async () => {
-                        await fetch(`http://localhost:3000/api/users/${id}`, { method: 'DELETE' });
+                        await store.fetchAPI(`/users/${id}`, { method: 'DELETE' });
                         window.showToast("User deleted successfully");
+                        await store.init();
                         renderUsers(container);
                     }, 'danger');
                 });
@@ -1846,14 +1933,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     window.showToast("Username must be at least 3 characters.", "error");
                     hasError = true;
                 }
-                if (!id && password.length < 6) {
+                if (!id && password.length < 4) {
                     window.markInvalid('userPassword');
-                    window.showToast("Password must be at least 6 characters.", "error");
+                    window.showToast("Password must be at least 4 characters.", "error");
                     hasError = true;
                 }
-                if (id && password && password.length < 6) {
+                if (id && password && password.length < 4) {
                     window.markInvalid('userPassword');
-                    window.showToast("New password must be at least 6 characters.", "error");
+                    window.showToast("New password must be at least 4 characters.", "error");
                     hasError = true;
                 }
 
@@ -1872,8 +1959,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     
                     if (!res.ok) {
-                        const err = await res.json();
-                        throw new Error(err.error);
+                        let errMsg = "Server error";
+                        try {
+                            const err = await res.json();
+                            errMsg = err.error || errMsg;
+                        } catch(e) {
+                            errMsg = await res.text() || errMsg;
+                        }
+                        throw new Error(errMsg);
                     }
                     
                     window.showToast(id ? "User updated successfully" : "User added successfully");
@@ -1881,6 +1974,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     await store.init();
                     renderUsers(container);
                 } catch (err) {
+                    console.error("User submission error:", err);
                     window.showToast(err.message, "error");
                 }
             });
@@ -1903,7 +1997,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (kitchenTimerInterval) clearInterval(kitchenTimerInterval);
 
-        const pendingOrders = store.data.orders.filter(o => o.status === 'Preparing' || o.status === 'Ready');
+        const pendingOrders = store.data.orders
+            .filter(o => o.status === 'Preparing' || o.status === 'Ready')
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
         
         // Calculate Prep Summary
         const prepMap = {};
@@ -2017,9 +2113,8 @@ document.addEventListener('DOMContentLoaded', () => {
         container.querySelectorAll('.mark-ready-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 const id = e.target.getAttribute('data-id');
-                await fetch(`http://localhost:3000/api/orders/${id}/status`, {
+                await store.fetchAPI(`/orders/${id}/status`, {
                     method: 'PATCH',
-                    headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({status: 'Ready'})
                 });
                 // Note: The socket 'order_updated' listener will trigger re-render
@@ -2029,271 +2124,14 @@ document.addEventListener('DOMContentLoaded', () => {
         container.querySelectorAll('.mark-completed-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 const id = e.target.getAttribute('data-id');
-                await fetch(`http://localhost:3000/api/orders/${id}/status`, {
+                await store.fetchAPI(`/orders/${id}/status`, {
                     method: 'PATCH',
-                    headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({status: 'Completed'})
                 });
             });
         });
     }
 
-    async function renderSettings(container) {
-        container.innerHTML = `<div style="padding:40px;">Loading settings...</div>`;
-        
-        try {
-            const [invRes, setRes] = await Promise.all([
-                fetch('http://localhost:3000/api/inventory'),
-                fetch('http://localhost:3000/api/settings')
-            ]);
-            
-            const inventory = await invRes.json();
-            const settings = await setRes.json();
-            
-            container.innerHTML = `
-                <div class="dashboard-layout">
-                    <div class="dash-header">
-                        <h2>Settings & Configuration</h2>
-                    </div>
-
-                    <!-- Global System Settings -->
-                    <div class="dash-panel" style="margin-bottom:24px; display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <h3 style="margin: 0; font-size: 20px;">System Configuration</h3>
-                            <p style="color: var(--text-muted); font-size: 14px; margin-top: 4px;">Update restaurant name, currency, and tax rates.</p>
-                        </div>
-                        <button class="btn btn-primary" id="editGlobalBtn"><i class="fa-solid fa-gear"></i> Edit Settings</button>
-                    </div>
-
-                    <!-- Global Settings Modal -->
-                    <div id="settingsModal" class="modal-overlay" style="display:none;">
-                        <div class="modal-content">
-                            <h3>Edit Global Settings</h3>
-                            <form id="globalSettingsForm">
-                                <div class="form-group">
-                                    <label>Restaurant Name</label>
-                                    <input type="text" id="setRestName" value="${settings.restaurant_name || ''}">
-                                </div>
-                                <div class="form-group">
-                                    <label>Currency Symbol</label>
-                                    <input type="text" id="setCurrency" value="${settings.currency_symbol || '$'}">
-                                </div>
-                                <div class="form-group">
-                                    <label>Tax Percentage (%)</label>
-                                    <input type="number" step="0.1" id="setTax" value="${settings.tax_percentage || '0'}">
-                                </div>
-                                <div class="modal-actions">
-                                    <button type="button" class="btn btn-outline" id="closeSettingsModal">Cancel</button>
-                                    <button type="submit" class="btn btn-primary">Save Changes</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                    
-                    <!-- Inventory Management -->
-                    <div class="dash-panel">
-                        <div class="panel-header">
-                            <h3>Raw Materials Inventory</h3>
-                            <button class="btn btn-primary" id="addInvBtn"><i class="fa-solid fa-plus"></i> Add Material</button>
-                        </div>
-                        
-                        <table class="orders-table">
-                            <thead>
-                                <tr>
-                                    <th>Item ID</th>
-                                    <th>Name</th>
-                                    <th>Stock Quantity</th>
-                                    <th>Status</th>
-                                    <th>Expiry Date</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${inventory.length > 0 ? inventory.map(item => `
-                                    <tr>
-                                        <td>#INV-${item.id}</td>
-                                        <td><strong>${item.name}</strong></td>
-                                        <td>${item.stock_qty} ${item.unit}</td>
-                                        <td>
-                                            ${item.stock_qty <= item.low_stock_threshold 
-                                                ? '<span class="status-badge status-Occupied" style="background:#fee2e2; color:#ef4444;">Low Stock</span>' 
-                                                : '<span class="status-badge status-Completed" style="background:#d1fae5; color:#065f46;">Healthy</span>'}
-                                        </td>
-                                        <td>${item.expiry_date || 'N/A'}</td>
-                                        <td>
-                                            <button class="btn btn-outline edit-inv-btn" data-id="${item.id}" data-name="${item.name}" data-qty="${item.stock_qty}" data-unit="${item.unit}" data-thresh="${item.low_stock_threshold}" data-exp="${item.expiry_date || ''}" style="padding:4px 8px; font-size:12px;">Edit</button>
-                                            <button class="btn btn-outline delete-inv-btn" data-id="${item.id}" style="padding:4px 8px; font-size:12px; border-color:#ef4444; color:#ef4444;">Delete</button>
-                                        </td>
-                                    </tr>
-                                `).join('') : '<tr><td colspan="6">No inventory data</td></tr>'}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Inventory Modal -->
-                <div id="invModal" class="modal-overlay" style="display:none;">
-                    <div class="modal-content">
-                        <h3 id="invModalTitle">Add New Material</h3>
-                        <form id="invForm">
-                            <input type="hidden" id="invId">
-                            <div class="form-group" style="margin-bottom: 12px;">
-                                <label>Material Name</label>
-                                <input type="text" id="invName" required>
-                            </div>
-                            <div style="display:flex; gap:12px; margin-bottom:12px;">
-                                <div class="form-group" style="flex:1;">
-                                    <label>Stock Qty</label>
-                                    <input type="number" id="invQty" step="0.1" required>
-                                </div>
-                                <div class="form-group" style="flex:1;">
-                                    <label>Unit (e.g. pcs, kg, ml)</label>
-                                    <input type="text" id="invUnit" required>
-                                </div>
-                            </div>
-                            <div class="form-group" style="margin-bottom: 12px;">
-                                <label>Low Stock Alert Threshold</label>
-                                <input type="number" id="invThresh" step="0.1" required>
-                            </div>
-                            <div class="form-group" style="margin-bottom: 12px;">
-                                <label>Expiry Date</label>
-                                <input type="date" id="invExp">
-                            </div>
-                            <div class="modal-actions">
-                                <button type="button" class="btn btn-outline" id="closeInvModal">Cancel</button>
-                                <button type="submit" class="btn btn-primary">Save Material</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            `;
-
-            // Global Settings Logic
-            const setModal = document.getElementById('settingsModal');
-            document.getElementById('editGlobalBtn').addEventListener('click', () => setModal.style.display = 'flex');
-            document.getElementById('closeSettingsModal').addEventListener('click', () => setModal.style.display = 'none');
-
-            document.getElementById('globalSettingsForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const payload = {
-                    restaurant_name: document.getElementById('setRestName').value,
-                    currency_symbol: document.getElementById('setCurrency').value,
-                    tax_percentage: document.getElementById('setTax').value
-                };
-                await fetch('http://localhost:3000/api/settings', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                window.showToast('Global settings saved successfully');
-                setModal.style.display = 'none';
-                renderSettings(container);
-            });
-
-            // Inventory Logic
-            const modal = document.getElementById('invModal');
-            const form = document.getElementById('invForm');
-
-            document.getElementById('addInvBtn').addEventListener('click', () => {
-                form.reset();
-                document.getElementById('invId').value = '';
-                document.getElementById('invModalTitle').textContent = 'Add New Material';
-                modal.style.display = 'flex';
-            });
-
-            container.querySelectorAll('.edit-inv-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    document.getElementById('invId').value = e.target.getAttribute('data-id');
-                    document.getElementById('invName').value = e.target.getAttribute('data-name');
-                    document.getElementById('invQty').value = e.target.getAttribute('data-qty');
-                    document.getElementById('invUnit').value = e.target.getAttribute('data-unit');
-                    document.getElementById('invThresh').value = e.target.getAttribute('data-thresh');
-                    document.getElementById('invExp').value = e.target.getAttribute('data-exp');
-                    document.getElementById('invModalTitle').textContent = 'Edit Material';
-                    modal.style.display = 'flex';
-                });
-            });
-
-            container.querySelectorAll('.delete-inv-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const id = e.target.getAttribute('data-id');
-                    window.showConfirm("Delete Material", "Are you sure you want to delete this material?", async () => {
-                        await fetch(`http://localhost:3000/api/inventory/${id}`, { method: 'DELETE' });
-                        window.showToast("Material deleted successfully");
-                        renderSettings(container);
-                    }, 'danger');
-                });
-            });
-
-            document.getElementById('closeInvModal').addEventListener('click', () => modal.style.display = 'none');
-
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                window.clearValidations('#invForm');
-                const id = document.getElementById('invId').value;
-                const nameEl = document.getElementById('invName');
-                const qtyEl = document.getElementById('invQty');
-                const unitEl = document.getElementById('invUnit');
-                const threshEl = document.getElementById('invThresh');
-                
-                const name = nameEl.value.trim();
-                const stock_qty = parseFloat(qtyEl.value);
-                const unit = unitEl.value.trim();
-                const low_stock_threshold = parseFloat(threshEl.value);
-                const expiry_date = document.getElementById('invExp').value;
-
-                let hasError = false;
-                if (!name) {
-                    window.markInvalid('invName');
-                    window.showToast("Material Name is required.", "error");
-                    hasError = true;
-                }
-                if (isNaN(stock_qty) || stock_qty < 0) {
-                    window.markInvalid('invQty');
-                    window.showToast("Stock quantity cannot be negative.", "error");
-                    hasError = true;
-                }
-                if (!unit) {
-                    window.markInvalid('invUnit');
-                    window.showToast("Unit is required.", "error");
-                    hasError = true;
-                }
-                if (isNaN(low_stock_threshold) || low_stock_threshold < 0) {
-                    window.markInvalid('invThresh');
-                    window.showToast("Threshold cannot be negative.", "error");
-                    hasError = true;
-                }
-
-                if (hasError) return;
-
-                const payload = { name, stock_qty, unit, low_stock_threshold, expiry_date };
-
-                try {
-                    const url = id ? `http://localhost:3000/api/inventory/${id}` : `http://localhost:3000/api/inventory`;
-                    const method = id ? 'PUT' : 'POST';
-                    const res = await fetch(url, {
-                        method: method,
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-
-                    if (!res.ok) {
-                        const err = await res.json();
-                        throw new Error(err.error);
-                    }
-
-                    window.showToast(id ? "Material updated successfully" : "Material added successfully");
-                    modal.style.display = 'none';
-                    renderSettings(container);
-                } catch (err) {
-                    window.showToast(err.message, "error");
-                }
-            });
-
-        } catch (e) {
-            container.innerHTML = `<div style="padding:40px; color:red;">Failed to load inventory.</div>`;
-        }
-    }
 
     function renderHistory(container) {
         if (!document.getElementById('history-css')) {
@@ -2305,6 +2143,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const orders = store.data.orders;
+        const currency = store.data.settings.currency_symbol || 'Rs.';
 
         container.innerHTML = `
             <div class="history-layout">
@@ -2341,7 +2180,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                                     ${ord.items.map(i => `${i.qty}x ${i.dish.name}`).join(', ')}
                                                 </div>
                                             </td>
-                                            <td><strong>$${ord.total.toFixed(2)}</strong></td>
+                                            <td><strong>${currency}${ord.total.toFixed(2)}</strong></td>
                                             <td><span class="status-badge status-${ord.status.toLowerCase()}">${ord.status}</span></td>
                                             ${store.data.currentUser.role === 'admin' ? `
                                                 <td>
@@ -2448,11 +2287,19 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = `<div style="padding:40px; display:flex; align-items:center; gap:12px; color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Loading Settings...</div>`;
 
         let settings = {};
+        let inventory = [];
+        let auditLogs = [];
         try {
-            const res = await store.fetchAPI('/settings');
-            settings = await res.json();
+            const [setRes, invRes, auditRes] = await Promise.all([
+                store.fetchAPI('/settings'),
+                store.fetchAPI('/inventory'),
+                store.fetchAPI('/audit-logs')
+            ]);
+            settings = await setRes.json();
+            inventory = await invRes.json();
+            auditLogs = await auditRes.json();
         } catch(e) {
-            container.innerHTML = `<div style="padding:40px; color:#ef4444;">Failed to load settings.</div>`;
+            container.innerHTML = `<div style="padding:40px; color:#ef4444;">Failed to load settings data.</div>`;
             return;
         }
 
@@ -2461,7 +2308,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const tabs = [
             { id: 'business', icon: 'fa-building', label: 'Business Info' },
             { id: 'order', icon: 'fa-receipt', label: 'Orders & Tax' },
+            { id: 'inventory', icon: 'fa-box-open', label: 'Inventory' },
             { id: 'receipt', icon: 'fa-file-invoice', label: 'Receipt' },
+            { id: 'audit', icon: 'fa-clipboard-list', label: 'Audit Logs' },
             { id: 'security', icon: 'fa-shield-halved', label: 'Security' },
         ];
 
@@ -2495,7 +2344,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="settings-group">
                         <label class="settings-label">Currency Symbol</label>
-                        <input id="s_currency_symbol" class="settings-input" type="text" maxlength="3" value="${settings.currency_symbol || '$'}" style="${inputStyle}">
+                        <input id="s_currency_symbol" class="settings-input" type="text" maxlength="4" value="${settings.currency_symbol || 'Rs.'}" style="${inputStyle}">
                     </div>
                     <div class="settings-group">
                         <label class="settings-label">Order ID Prefix</label>
@@ -2578,6 +2427,73 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div id="receiptLivePreview" style="background:white; color:#111; font-family:monospace; font-size:12px; line-height:1.9; padding:20px 24px; border-radius:12px; box-shadow:0 0 40px rgba(0,0,0,0.4);"></div>
                     </div>
                 </div>`,
+            inventory: `
+                <div style="display:flex; flex-direction:column; gap:20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <h3 style="margin:0; font-size:18px;">Raw Materials</h3>
+                            <p style="color:var(--text-muted); font-size:13px;">Manage stock levels and low-stock alerts.</p>
+                        </div>
+                        <button class="btn btn-primary" id="addInvBtn"><i class="fa-solid fa-plus"></i> Add Material</button>
+                    </div>
+                    <div style="max-height:400px; overflow-y:auto; border:1px solid var(--border-color); border-radius:12px;">
+                        <table class="orders-table" style="width:100%; border-collapse:collapse;">
+                            <thead>
+                                <tr style="background:rgba(255,255,255,0.02); text-align:left;">
+                                    <th style="padding:12px; font-size:12px; color:var(--text-muted);">Name</th>
+                                    <th style="padding:12px; font-size:12px; color:var(--text-muted);">Stock</th>
+                                    <th style="padding:12px; font-size:12px; color:var(--text-muted);">Status</th>
+                                    <th style="padding:12px; font-size:12px; color:var(--text-muted);">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${inventory.length > 0 ? inventory.map(item => `
+                                    <tr style="border-top:1px solid var(--border-color);">
+                                        <td style="padding:12px;"><strong>${item.name}</strong></td>
+                                        <td style="padding:12px;">${item.stock_qty} ${item.unit}</td>
+                                        <td style="padding:12px;">
+                                            ${item.stock_qty <= item.low_stock_threshold 
+                                                ? '<span class="status-badge" style="background:rgba(239,68,68,0.1); color:#fca5a5; border:1px solid rgba(239,68,68,0.2);">Low Stock</span>' 
+                                                : '<span class="status-badge" style="background:rgba(16,185,129,0.1); color:#34d399; border:1px solid rgba(16,185,129,0.2);">Healthy</span>'}
+                                        </td>
+                                        <td style="padding:12px; display:flex; gap:8px;">
+                                            <button class="btn btn-outline edit-inv-btn" data-id="${item.id}" data-name="${item.name}" data-qty="${item.stock_qty}" data-unit="${item.unit}" data-thresh="${item.low_stock_threshold}" data-exp="${item.expiry_date || ''}" style="padding:4px 8px; font-size:11px;">Edit</button>
+                                            <button class="btn btn-outline delete-inv-btn" data-id="${item.id}" style="padding:4px 8px; font-size:11px; border-color:rgba(239,68,68,0.4); color:#fca5a5;">Delete</button>
+                                        </td>
+                                    </tr>
+                                `).join('') : '<tr><td colspan="4" style="padding:24px; text-align:center; color:var(--text-muted);">No materials found</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>`,
+            audit: `
+                <div style="display:flex; flex-direction:column; gap:20px;">
+                    <div>
+                        <h3 style="margin:0; font-size:18px;">System Audit Logs</h3>
+                        <p style="color:var(--text-muted); font-size:13px;">Review recent administrative and transactional actions.</p>
+                    </div>
+                    <div style="max-height:500px; overflow-y:auto; border:1px solid var(--border-color); border-radius:12px; background:rgba(0,0,0,0.2);">
+                        <div style="padding:0 16px;">
+                            ${auditLogs.length > 0 ? auditLogs.map(log => `
+                                <div style="padding:16px 0; border-bottom:1px solid var(--border-color); display:flex; gap:16px;">
+                                    <div style="width:40px; height:40px; border-radius:10px; background:rgba(255,255,255,0.05); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:16px; color:var(--primary);">
+                                        <i class="fa-solid ${log.action.includes('CREATE') ? 'fa-plus-circle' : log.action.includes('DELETE') ? 'fa-trash' : 'fa-pen-to-square'}"></i>
+                                    </div>
+                                    <div style="flex:1;">
+                                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                                            <span style="font-weight:600; font-size:14px;">${log.action.replace(/_/g, ' ')}</span>
+                                            <span style="font-size:11px; color:var(--text-muted);">${new Date(log.timestamp).toLocaleString()}</span>
+                                        </div>
+                                        <div style="font-size:13px; color:var(--text-muted); line-height:1.5;">${log.details}</div>
+                                        <div style="margin-top:6px; font-size:11px;">
+                                            <span style="color:var(--primary); font-weight:700;">${log.target_type} ID:</span> ${log.target_id}
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('') : '<div style="padding:40px; text-align:center; color:var(--text-muted);">No audit logs found</div>'}
+                        </div>
+                    </div>
+                </div>`,
             security: `
                 <div style="display:grid; gap:20px; max-width:480px;">
                     <div style="padding:16px; background:rgba(0,242,254,0.05); border:1px solid rgba(0,242,254,0.2); border-radius:12px; font-size:13px; color:var(--text-muted); display:flex; gap:12px; align-items:flex-start;">
@@ -2628,11 +2544,47 @@ document.addEventListener('DOMContentLoaded', () => {
                         </style>
                         ${tabContent[activeTab]}
 
-                        ${activeTab !== 'security' ? `
+                        ${['business', 'order', 'receipt'].includes(activeTab) ? `
                         <div style="margin-top:32px; padding-top:24px; border-top:1px solid var(--border-color); display:flex; gap:12px; justify-content:flex-end;">
                             <button id="cancelSettingsBtn" class="btn btn-outline">Cancel</button>
                             <button id="saveSettingsBtn" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
                         </div>` : ''}
+                    </div>
+                </div>
+
+                <!-- Inventory Modal -->
+                <div id="invModal" class="modal-overlay" style="display:none;">
+                    <div class="modal-content" style="max-width:450px;">
+                        <h3 id="invModalTitle">Add New Material</h3>
+                        <form id="invForm">
+                            <input type="hidden" id="invId">
+                            <div class="form-group" style="margin-bottom:16px;">
+                                <label class="settings-label">Material Name</label>
+                                <input type="text" id="invName" class="settings-input" style="${inputStyle}" required>
+                            </div>
+                            <div style="display:flex; gap:16px; margin-bottom:16px;">
+                                <div class="form-group" style="flex:1;">
+                                    <label class="settings-label">Stock Qty</label>
+                                    <input type="number" id="invQty" step="0.1" class="settings-input" style="${inputStyle}" required>
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label class="settings-label">Unit (e.g. kg, pcs)</label>
+                                    <input type="text" id="invUnit" class="settings-input" style="${inputStyle}" required>
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin-bottom:16px;">
+                                <label class="settings-label">Low Stock Threshold</label>
+                                <input type="number" id="invThresh" step="0.1" class="settings-input" style="${inputStyle}" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom:24px;">
+                                <label class="settings-label">Expiry Date</label>
+                                <input type="date" id="invExp" class="settings-input" style="${inputStyle}">
+                            </div>
+                            <div class="modal-actions">
+                                <button type="button" class="btn btn-outline" id="closeInvModal">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Save Material</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             `;
@@ -2657,7 +2609,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const showType    = document.getElementById('rf_show_type')?.checked !== false;
                     const showTax     = document.getElementById('rf_show_tax')?.checked !== false;
                     const showPhone   = document.getElementById('rf_show_phone')?.checked !== false;
-                    const cur      = settings.currency_symbol || '$';
+                    const cur      = settings.currency_symbol || 'Rs.';
                     const tax      = settings.tax_rate || '10';
                     const prefix   = settings.order_prefix || 'ORD';
                     const phone    = settings.business_phone || '';
@@ -2798,6 +2750,89 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
             }
 
+            // Inventory Logic
+            if (activeTab === 'inventory') {
+                const invModal = document.getElementById('invModal');
+                const invForm = document.getElementById('invForm');
+
+                document.getElementById('addInvBtn').onclick = () => {
+                    invForm.reset();
+                    document.getElementById('invId').value = '';
+                    document.getElementById('invModalTitle').textContent = 'Add New Material';
+                    invModal.style.display = 'flex';
+                };
+
+                document.getElementById('closeInvModal').onclick = () => invModal.style.display = 'none';
+
+                container.querySelectorAll('.edit-inv-btn').forEach(btn => {
+                    btn.onclick = (e) => {
+                        const target = e.currentTarget;
+                        document.getElementById('invId').value = target.getAttribute('data-id');
+                        document.getElementById('invName').value = target.getAttribute('data-name');
+                        document.getElementById('invQty').value = target.getAttribute('data-qty');
+                        document.getElementById('invUnit').value = target.getAttribute('data-unit');
+                        document.getElementById('invThresh').value = target.getAttribute('data-thresh');
+                        document.getElementById('invExp').value = target.getAttribute('data-exp');
+                        document.getElementById('invModalTitle').textContent = 'Edit Material';
+                        invModal.style.display = 'flex';
+                    };
+                });
+
+                container.querySelectorAll('.delete-inv-btn').forEach(btn => {
+                    btn.onclick = (e) => {
+                        const id = e.currentTarget.getAttribute('data-id');
+                        window.showConfirm("Delete Material", "Are you sure you want to delete this material?", async () => {
+                            await store.fetchAPI(`/inventory/${id}`, { method: 'DELETE' });
+                            window.showToast("Material deleted successfully");
+                            renderSettings(container);
+                        }, 'danger');
+                    };
+                });
+
+                invForm.onsubmit = async (e) => {
+                    e.preventDefault();
+                    window.clearValidations('#invForm');
+                    const id = document.getElementById('invId').value;
+                    const name = document.getElementById('invName').value.trim();
+                    const qty = parseFloat(document.getElementById('invQty').value);
+                    const unit = document.getElementById('invUnit').value.trim();
+                    const thresh = parseFloat(document.getElementById('invThresh').value);
+                    const exp = document.getElementById('invExp').value;
+
+                    let hasError = false;
+                    if (!name) { window.markInvalid('invName'); hasError = true; }
+                    if (isNaN(qty) || qty < 0) { window.markInvalid('invQty'); hasError = true; }
+                    if (!unit) { window.markInvalid('invUnit'); hasError = true; }
+                    if (isNaN(thresh) || thresh < 0) { window.markInvalid('invThresh'); hasError = true; }
+
+                    if (hasError) return window.showToast("Please check all fields", "error");
+
+                    const payload = {
+                        name,
+                        stock_qty: qty,
+                        unit,
+                        low_stock_threshold: thresh,
+                        expiry_date: exp
+                    };
+
+                    try {
+                        const method = id ? 'PUT' : 'POST';
+                        const url = id ? `/inventory/${id}` : '/inventory';
+                        const res = await store.fetchAPI(url, { method, body: JSON.stringify(payload) });
+                        if (res.ok) {
+                            window.showToast(id ? "Material updated" : "Material added");
+                            invModal.style.display = 'none';
+                            renderSettings(container);
+                        } else {
+                            const err = await res.json();
+                            window.showToast(err.error || "Failed to save material", "error");
+                        }
+                    } catch(err) {
+                        window.showToast("Network error", "error");
+                    }
+                };
+            }
+
             document.getElementById('cancelSettingsBtn')?.addEventListener('click', async () => {
                 const res = await store.fetchAPI('/settings');
                 settings = await res.json();
@@ -2806,5 +2841,99 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         render();
+    }
+
+    async function renderServing(container) {
+        if (!document.getElementById('kitchen-css')) {
+            const link = document.createElement('link');
+            link.id = 'kitchen-css';
+            link.rel = 'stylesheet';
+            link.href = 'assets/css/kitchen.css';
+            document.head.appendChild(link);
+        }
+
+        const drawView = () => {
+            const readyOrders = store.data.orders
+                .filter(o => o.status === 'Ready')
+                .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            container.innerHTML = `
+                <div style="padding:32px; height:100%; display:flex; flex-direction:column; gap:24px;">
+                    <div>
+                        <h2 style="font-size:24px; font-weight:700; margin-bottom:4px;">Ready to Serve</h2>
+                        <p style="color:var(--text-muted); font-size:14px;">Orders waiting to be delivered to customers.</p>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:20px; overflow-y:auto; flex:1; align-content:start;">
+                        ${readyOrders.length === 0 ? `
+                            <div style="grid-column:1/-1; background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:24px; padding:60px; text-align:center; backdrop-filter:blur(20px);">
+                                <div style="font-size:48px; color:var(--primary); opacity:0.3; margin-bottom:20px;">
+                                    <i class="fa-solid fa-plate-wheat"></i>
+                                </div>
+                                <h3 style="margin-bottom:8px;">No Orders Ready</h3>
+                                <p style="color:var(--text-muted);">When the kitchen marks an order as ready, it will appear here.</p>
+                            </div>
+                        ` : ''}
+
+                        ${readyOrders.map(ord => {
+                            const table = store.data.tables.find(t => t.id == ord.table_id);
+                            const customer = ord.customer_id ? store.data.customers.find(c => c.id == ord.customer_id) : null;
+                            return `
+                                <div class="ticket-card" style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:18px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 10px 30px rgba(0,0,0,0.1);">
+                                    <div style="padding:16px; background:rgba(0, 242, 254, 0.1); border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                                        <span style="font-weight:700; color:var(--primary); font-size:14px;">${ord.id}</span>
+                                        <span style="font-size:11px; color:var(--text-muted);">${new Date(ord.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                    </div>
+                                    <div style="padding:16px; flex:1;">
+                                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                                            <i class="fa-solid ${ord.order_type === 'Takeaway' ? 'fa-bag-shopping' : 'fa-chair'}" style="color:var(--text-muted); font-size:12px;"></i>
+                                            <span style="font-weight:600; font-size:13px;">${ord.order_type || 'Dine In'}</span>
+                                            ${table ? `<span style="background:var(--primary-light); color:var(--primary); padding:2px 8px; border-radius:4px; font-size:11px;">${table.name}</span>` : ''}
+                                        </div>
+                                        ${customer ? `<div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;"><i class="fa-solid fa-user" style="margin-right:6px;"></i> ${customer.name}</div>` : ''}
+                                        <div style="border-top:1px dashed var(--border-color); padding-top:12px; margin-top:4px;">
+                                            ${ord.items.map(item => `
+                                                <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+                                                    <span style="color:var(--text-muted); font-weight:600; min-width:24px;">${item.qty}x</span>
+                                                    <span style="flex:1; font-weight:500;">${item.dish.name}</span>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                    <div style="padding:16px; background:rgba(255,255,255,0.02); border-top:1px solid var(--border-color);">
+                                        <button class="btn btn-primary mark-served-btn" data-id="${ord.id}" style="width:100%;">
+                                            <i class="fa-solid fa-check-double"></i> Mark as Served
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+
+            container.querySelectorAll('.mark-served-btn').forEach(btn => {
+                btn.onclick = async (e) => {
+                    const id = e.currentTarget.getAttribute('data-id');
+                    const res = await store.fetchAPI(`/orders/${id}/status`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ status: 'Completed' })
+                    });
+                    if (res.ok) {
+                        window.showToast("Order served and completed!");
+                        // Re-render via socket if possible, otherwise manual
+                        await store.refreshData();
+                        drawView();
+                    }
+                };
+            });
+        };
+
+        drawView();
+        
+        // Listen for updates
+        const updateListener = () => drawView();
+        window.addEventListener('order_updated', updateListener);
+        // Clean up on route change would be ideal, but for now we'll just drawView
     }
 });

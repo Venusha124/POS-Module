@@ -126,29 +126,52 @@ db.serialize(() => {
         if (row.count === 0) {
             console.log("Seeding initial data...");
             
-            // Seed Categories
+            // Seed Categories (Sri Lankan Menu)
             const stmt = db.prepare("INSERT INTO categories VALUES (?, ?, ?)");
-            stmt.run('desserts', 'Desserts', '🍰');
-            stmt.run('drinks', 'Drinks', '🍹');
-            stmt.run('fast_foods', 'Fast Foods', '🍔');
+            stmt.run('breakfast', 'Breakfast', '🍳');
+            stmt.run('lunch',     'Lunch',     '🍱');
+            stmt.run('dinner',    'Dinner',    '🌙');
+            stmt.run('desserts',  'Desserts',  '🍮');
+            stmt.run('drinks',    'Drinks',    '🥤');
             stmt.finalize();
 
-            // Seed Dishes
+            // Seed Dishes (Sri Lankan Menu)
             const stmt2 = db.prepare("INSERT INTO dishes (name, category_id, price, image) VALUES (?, ?, ?, ?)");
-            stmt2.run('Cheese Syrniki Pancakes', 'desserts', 8.00, 'https://images.unsplash.com/photo-1554520735-0a1429b1317c?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Apple Stuffed Pancake', 'desserts', 10.00, 'https://images.unsplash.com/photo-1528207776546-365bb710ee93?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Terracotta Bowl', 'desserts', 12.00, 'https://images.unsplash.com/photo-1511690656952-34342bb7c2f2?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Croissant Dessert', 'desserts', 15.00, 'https://images.unsplash.com/photo-1555507036-ab1e4006a2a0?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Granola Banana & Berry', 'desserts', 10.00, 'https://images.unsplash.com/photo-1495214783159-3503fd1b572d?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Vanilla Cherry Cupcake', 'desserts', 8.00, 'https://images.unsplash.com/photo-1550617931-e17a7b70dce2?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Belgian Waffles', 'desserts', 20.00, 'https://images.unsplash.com/photo-1562376552-0d160a2f9fa4?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Granola with Yoghurt', 'desserts', 15.00, 'https://images.unsplash.com/photo-1484723091791-00d759ce4342?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Muesli Bowl', 'desserts', 10.00, 'https://images.unsplash.com/photo-1517686469429-8bdb88b9f907?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Waffles with Ice-cream', 'desserts', 10.00, 'https://images.unsplash.com/photo-1584589167171-541ce45f1eea?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Classic Burger', 'fast_foods', 15.00, 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Spicy Chicken Wings', 'fast_foods', 12.00, 'https://images.unsplash.com/photo-1569058242253-1df3ad1cbcc4?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Fresh Lemonade', 'drinks', 5.00, 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=200&q=80');
-            stmt2.run('Iced Latte', 'drinks', 6.00, 'https://images.unsplash.com/photo-1461023058943-07cb1ce8db1b?auto=format&fit=crop&w=200&q=80');
+            // Breakfast
+            stmt2.run('String Hoppers with coconut sambol and dhal curry', 'breakfast',  350, 'assets/images/menu/sl_breakfast.png');
+            stmt2.run('Hoppers with egg and spicy sambol',                 'breakfast',  250, 'assets/images/menu/sl_breakfast.png');
+            stmt2.run('Milk Rice served with lunu miris',                  'breakfast',  200, 'assets/images/menu/sl_breakfast.png');
+            stmt2.run('Pol Roti with katta sambol',                        'breakfast',  180, 'assets/images/menu/sl_breakfast.png');
+            stmt2.run('Pittu with coconut milk and curry',                 'breakfast',  300, 'assets/images/menu/sl_breakfast.png');
+            stmt2.run('Ulundu Vadai with chutney',                         'breakfast',  220, 'assets/images/menu/sl_breakfast.png');
+            // Lunch
+            stmt2.run('Rice and Curry (chicken, fish, dhal, beetroot & mallung)', 'lunch',  650, 'assets/images/menu/sl_lunch.png');
+            stmt2.run('Lamprais wrapped in banana leaf',                   'lunch',      850, 'assets/images/menu/sl_lunch.png');
+            stmt2.run('Kottu Roti with chicken, cheese, or seafood',       'lunch',      750, 'assets/images/menu/sl_lunch.png');
+            stmt2.run('Devilled Chicken with fried rice',                  'lunch',      900, 'assets/images/menu/sl_lunch.png');
+            stmt2.run('Parippu Curry with steamed rice',                   'lunch',      450, 'assets/images/menu/sl_lunch.png');
+            stmt2.run('Fish Ambul Thiyal',                                 'lunch',      700, 'assets/images/menu/sl_lunch.png');
+            // Dinner
+            stmt2.run('Chicken Kottu',                                     'dinner',     750, 'assets/images/menu/sl_dinner.png');
+            stmt2.run('Seafood Nasi Goreng',                               'dinner',     950, 'assets/images/menu/sl_dinner.png');
+            stmt2.run('Chicken Fried Rice',                                'dinner',     700, 'assets/images/menu/sl_dinner.png');
+            stmt2.run('Cheese Roti with curry sauce',                      'dinner',     550, 'assets/images/menu/sl_dinner.png');
+            stmt2.run('String Hoppers with chicken curry',                 'dinner',     600, 'assets/images/menu/sl_dinner.png');
+            stmt2.run('Vegetable Curry with rice',                         'dinner',     500, 'assets/images/menu/sl_dinner.png');
+            // Desserts
+            stmt2.run('Watalappan',                                        'desserts',   350, 'assets/images/menu/sl_desserts.png');
+            stmt2.run('Curd and Treacle',                                  'desserts',   280, 'assets/images/menu/sl_desserts.png');
+            stmt2.run('Kokis',                                             'desserts',   200, 'assets/images/menu/sl_desserts.png');
+            stmt2.run('Kevum',                                             'desserts',   220, 'assets/images/menu/sl_desserts.png');
+            stmt2.run('Aasmi',                                             'desserts',   200, 'assets/images/menu/sl_desserts.png');
+            stmt2.run('Fruit Salad with Ice Cream',                        'desserts',   380, 'assets/images/menu/sl_desserts.png');
+            // Drinks
+            stmt2.run('Ceylon Tea',                                        'drinks',     150, 'assets/images/menu/sl_drinks.png');
+            stmt2.run('King Coconut',                                      'drinks',     200, 'assets/images/menu/sl_drinks.png');
+            stmt2.run('Faluda',                                            'drinks',     320, 'assets/images/menu/sl_drinks.png');
+            stmt2.run('Wood Apple Juice',                                  'drinks',     280, 'assets/images/menu/sl_drinks.png');
+            stmt2.run('Avocado Juice',                                     'drinks',     300, 'assets/images/menu/sl_drinks.png');
+            stmt2.run('Lime Juice',                                        'drinks',     200, 'assets/images/menu/sl_drinks.png');
             stmt2.finalize();
 
             // Seed Admin User
@@ -160,18 +183,16 @@ db.serialize(() => {
             db.run("INSERT INTO inventory (name, stock_qty, unit, low_stock_threshold) VALUES ('Burger Buns', 100, 'pcs', 20)");
             db.run("INSERT INTO inventory (name, stock_qty, unit, low_stock_threshold) VALUES ('Beef Patty', 100, 'pcs', 20)");
             
-            // Link Burger to Inventory
-            db.run("INSERT INTO dish_ingredients (dish_id, inventory_id, qty_required) VALUES (2, 1, 1)"); // 1 Bun
-            db.run("INSERT INTO dish_ingredients (dish_id, inventory_id, qty_required) VALUES (2, 2, 1)"); // 1 Patty
+            // No dish_ingredients pre-seeded for the new menu (can be added via Inventory module)
             
             // Seed Restaurant Tables
             for (let i=1; i<=10; i++) {
                 db.run("INSERT INTO restaurant_tables (name, status, seats) VALUES (?, 'Available', 4)", [`Table ${i}`]);
             }
 
-            // Seed System Settings
+            // Seed System Settings (LKR)
             db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_rate', '10')");
-            db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('currency_symbol', '$')");
+            db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('currency_symbol', 'Rs.')");
             db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('business_name', 'TASTY OF ASCENDIA')");
 
             // Seed Customers

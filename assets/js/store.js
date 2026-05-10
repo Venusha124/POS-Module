@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3000/api';
+const API_URL = '/api';
 
 const store = {
     data: {
@@ -17,9 +17,9 @@ const store = {
         selectedCustomerId: null,
         currentOrderType: 'Dine In',
         settings: {
-            restaurant_name: 'TASTY OF ASCENDIA',
-            currency: '$',
-            tax_percentage: '10'
+            business_name: 'TASTY OF ASCENDIA',
+            currency_symbol: 'Rs.',
+            tax_rate: '10'
         }
     },
 

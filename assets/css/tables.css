@@ -37,6 +37,7 @@
 .legend-available { background-color: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; }
 .legend-occupied { background-color: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; }
 .legend-reserved { background-color: rgba(234, 179, 8, 0.2); border: 1px solid #eab308; }
+.legend-dirty { background-color: rgba(168, 85, 247, 0.2); border: 1px solid #a855f7; }
 
 .floor-plan {
     flex: 1;
@@ -96,3 +97,4 @@
 .status-available { border: 2px solid #10b981; background-color: rgba(16, 185, 129, 0.1); }
 .status-occupied { border: 2px solid #ef4444; background-color: rgba(239, 68, 68, 0.15); color: #ef4444; }
 .status-reserved { border: 2px solid #eab308; background-color: rgba(234, 179, 8, 0.15); color: #eab308; }
+.status-dirty { border: 2px solid #a855f7; background-color: rgba(168, 85, 247, 0.15); color: #a855f7; }

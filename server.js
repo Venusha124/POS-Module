@@ -36,13 +36,39 @@ const allQuery = (query, params = []) => new Promise((resolve, reject) => {
 });
 
 // --- VALIDATION HELPER ---
-const validate = (fields, data) => {
+const validate = (rules, data) => {
     const errors = [];
-    fields.forEach(field => {
-        if (data[field] === undefined || data[field] === null || data[field] === '') {
-            errors.push(`${field} is required`);
+    for (const [field, rule] of Object.entries(rules)) {
+        const val = data[field];
+        const displayField = field.replace('_', ' ').charAt(0).toUpperCase() + field.replace('_', ' ').slice(1);
+        
+        if (rule.required && (val === undefined || val === null || val === '')) {
+            errors.push(`${displayField} is required`);
+            continue;
         }
-    });
+        
+        if (val !== undefined && val !== null && val !== '') {
+            if (rule.type === 'number') {
+                const num = parseFloat(val);
+                if (isNaN(num)) {
+                    errors.push(`${displayField} must be a number`);
+                } else {
+                    if (rule.min !== undefined && num < rule.min) {
+                        errors.push(`${displayField} must be at least ${rule.min}`);
+                    }
+                    if (rule.max !== undefined && num > rule.max) {
+                        errors.push(`${displayField} cannot exceed ${rule.max}`);
+                    }
+                }
+            }
+            if (rule.pattern && !rule.pattern.test(val)) {
+                errors.push(`${displayField} format is invalid`);
+            }
+            if (rule.enum && !rule.enum.includes(val)) {
+                errors.push(`Invalid ${displayField}`);
+            }
+        }
+    }
     return errors;
 };
 
@@ -79,7 +105,10 @@ const authorize = (roles = []) => {
 // Login
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
-    const errors = validate(['username', 'password'], req.body);
+    const errors = validate({
+        username: { required: true },
+        password: { required: true }
+    }, req.body);
     if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
 
     try {
@@ -103,15 +132,19 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
-// Create user
-app.post('/api/users', async (req, res) => {
+// Create user (Admin Only)
+app.post('/api/users', authorize(['admin']), async (req, res) => {
     const { username, password, role, name } = req.body;
-    const errors = validate(['username', 'password', 'role', 'name'], req.body);
+    const errors = validate({
+        username: { required: true },
+        password: { required: true },
+        role: { required: true, enum: ['admin', 'cashier', 'kitchen', 'manager', 'waiter'] },
+        name: { required: true }
+    }, req.body);
     if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
     
     if (username.length < 3) return res.status(400).json({ error: "Username must be at least 3 characters" });
-    if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
-    if (!['admin', 'cashier', 'kitchen'].includes(role)) return res.status(400).json({ error: "Invalid role" });
+    if (password.length < 4) return res.status(400).json({ error: "Password must be at least 4 characters" });
 
     try {
         const existing = await getQuery("SELECT id FROM users WHERE username = ?", [username]);
@@ -119,19 +152,22 @@ app.post('/api/users', async (req, res) => {
         
         const result = await runQuery("INSERT INTO users (username, password, role, name) VALUES (?, ?, ?, ?)", 
             [username, password, role, name]);
+        await addAuditLog(req.headers['x-user-id'], 'CREATE', 'USER', result.lastID, `Created user ${username} with role ${role}`);
         res.json({ id: result.lastID, username, role, name });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// Update user
-app.put('/api/users/:id', async (req, res) => {
+// Update user (Admin Only)
+app.put('/api/users/:id', authorize(['admin']), async (req, res) => {
     const { role, name, password } = req.body;
-    const errors = validate(['role', 'name'], req.body);
+    const errors = validate({
+        role: { required: true, enum: ['admin', 'cashier', 'kitchen', 'manager', 'waiter'] },
+        name: { required: true }
+    }, req.body);
     if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
-    if (!['admin', 'cashier', 'kitchen'].includes(role)) return res.status(400).json({ error: "Invalid role" });
-    if (password && password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+    if (password && password.length < 4) return res.status(400).json({ error: "Password must be at least 4 characters" });
     
     try {
         let query = "UPDATE users SET role = ?, name = ? WHERE id = ?";
@@ -144,6 +180,18 @@ app.put('/api/users/:id', async (req, res) => {
         
         const result = await runQuery(query, params);
         if (result.changes === 0) return res.status(404).json({ error: "User not found" });
+        await addAuditLog(req.headers['x-user-id'], 'UPDATE', 'USER', req.params.id, `Updated user ${name} (ID: ${req.params.id})`);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete user (Admin Only)
+app.delete('/api/users/:id', authorize(['admin']), async (req, res) => {
+    try {
+        await runQuery("DELETE FROM users WHERE id = ?", [req.params.id]);
+        await addAuditLog(req.headers['x-user-id'], 'DELETE', 'USER', req.params.id, `Deleted user ID ${req.params.id}`);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -170,11 +218,15 @@ app.get('/api/dishes', async (req, res) => {
     }
 });
 
-app.post('/api/dishes', authorize(['admin']), async (req, res) => {
+app.post('/api/dishes', authorize(['admin', 'manager']), async (req, res) => {
     const { name, category_id, price, image } = req.body;
-    const errors = validate(['name', 'category_id', 'price'], req.body);
+    const errors = validate({
+        name: { required: true },
+        category_id: { required: true },
+        price: { required: true, type: 'number', min: 0.01 },
+        image: { required: true }
+    }, req.body);
     if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
-    if (parseFloat(price) <= 0) return res.status(400).json({ error: "Price must be a positive number" });
 
     try {
         const result = await runQuery("INSERT INTO dishes (name, category_id, price, image) VALUES (?, ?, ?, ?)", [name, category_id, price, image]);
@@ -185,11 +237,15 @@ app.post('/api/dishes', authorize(['admin']), async (req, res) => {
     }
 });
 
-app.put('/api/dishes/:id', authorize(['admin']), async (req, res) => {
+app.put('/api/dishes/:id', authorize(['admin', 'manager']), async (req, res) => {
     const { name, category_id, price, image } = req.body;
-    const errors = validate(['name', 'category_id', 'price'], req.body);
+    const errors = validate({
+        name: { required: true },
+        category_id: { required: true },
+        price: { required: true, type: 'number', min: 0.01 },
+        image: { required: true }
+    }, req.body);
     if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
-    if (parseFloat(price) <= 0) return res.status(400).json({ error: "Price must be a positive number" });
 
     try {
         const result = await runQuery("UPDATE dishes SET name = ?, category_id = ?, price = ?, image = ? WHERE id = ?", [name, category_id, price, image, req.params.id]);
@@ -201,7 +257,7 @@ app.put('/api/dishes/:id', authorize(['admin']), async (req, res) => {
     }
 });
 
-app.delete('/api/dishes/:id', authorize(['admin']), async (req, res) => {
+app.delete('/api/dishes/:id', authorize(['admin', 'manager']), async (req, res) => {
     try {
         await runQuery("DELETE FROM dishes WHERE id = ?", [req.params.id]);
         await addAuditLog(req.headers['x-user-id'], 'DELETE', 'DISH', req.params.id, `Deleted dish ID ${req.params.id}`);
@@ -376,11 +432,33 @@ app.post('/api/orders/:id/cancel', authorize(['admin']), async (req, res) => {
 });
 
 // Update Order Status (For KDS)
-app.patch('/api/orders/:id/status', async (req, res) => {
+app.patch('/api/orders/:id/status', authorize(['admin', 'kitchen', 'waiter', 'manager']), async (req, res) => {
     const { status } = req.body;
+    const errors = validate({
+        status: { required: true, enum: ['Preparing', 'Ready', 'Completed', 'Cancelled'] }
+    }, req.body);
+    if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
     try {
         await runQuery("UPDATE orders SET status = ? WHERE id = ?", [status, req.params.id]);
-        await addAuditLog(req.headers['x-user-id'], 'UPDATE_STATUS', 'ORDER', req.params.id, `Order ${req.params.id} marked as ${status}`);
+
+        // Set table to 'Dirty' if completed (needs cleaning)
+        if (status.toLowerCase() === 'completed') {
+            // Use a subquery to update the table directly to avoid race conditions and ensure accuracy
+            await runQuery(`
+                UPDATE restaurant_tables 
+                SET status = 'Dirty' 
+                WHERE id = (SELECT table_id FROM orders WHERE id = ?)
+            `, [req.params.id]);
+            
+            // Add audit log for the table change
+            const order = await getQuery("SELECT table_id FROM orders WHERE id = ?", [req.params.id]);
+            if (order && order.table_id) {
+                await addAuditLog(req.headers['x-user-id'] || 1, 'UPDATE_STATUS', 'TABLE', order.table_id, `Table ${order.table_id} automatically marked as Dirty (Order ${req.params.id} Completed)`);
+            }
+        }
+        
+        await addAuditLog(req.headers['x-user-id'] || 1, 'UPDATE_STATUS', 'ORDER', req.params.id, `Order ${req.params.id} marked as ${status}`);
+        
         io.emit('order_updated', { id: req.params.id, status });
         res.json({ success: true });
     } catch (err) {
@@ -388,11 +466,17 @@ app.patch('/api/orders/:id/status', async (req, res) => {
     }
 });
 
-// Update Table Status
-app.patch('/api/tables/:id/status', async (req, res) => {
+// Update Table Status (Cleanup / Occupancy)
+app.patch('/api/tables/:id/status', authorize(['admin', 'waiter', 'manager', 'cashier']), async (req, res) => {
     const { status } = req.body;
+    const errors = validate({
+        status: { required: true, enum: ['Available', 'Occupied', 'Reserved', 'Dirty'] }
+    }, req.body);
+    if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
+
     try {
         await runQuery("UPDATE restaurant_tables SET status = ? WHERE id = ?", [status, req.params.id]);
+        await addAuditLog(req.headers['x-user-id'] || 1, 'UPDATE_STATUS', 'TABLE', req.params.id, `Table ${req.params.id} marked as ${status}`);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -402,10 +486,23 @@ app.patch('/api/tables/:id/status', async (req, res) => {
 // --- System Settings ---
 app.get('/api/settings', async (req, res) => {
     try {
-        const rows = await allQuery("SELECT * FROM system_settings");
+        const rows = await allQuery("SELECT * FROM settings");
         const settings = {};
         rows.forEach(r => settings[r.key] = r.value);
         res.json(settings);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/settings', authorize(['admin']), async (req, res) => {
+    const settings = req.body;
+    try {
+        for (const [key, value] of Object.entries(settings)) {
+            await runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, value]);
+        }
+        await addAuditLog(req.headers['x-user-id'], 'UPDATE', 'SETTINGS', 'global', `Updated settings: ${JSON.stringify(settings)}`);
+        res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -421,18 +518,7 @@ app.get('/api/audit-logs', authorize(['admin']), async (req, res) => {
     }
 });
 
-app.post('/api/settings', authorize(['admin']), async (req, res) => {
-    const settings = req.body;
-    try {
-        for (const [key, value] of Object.entries(settings)) {
-            await runQuery("INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)", [key, value]);
-        }
-        await addAuditLog(req.headers['x-user-id'], 'UPDATE', 'SETTINGS', 'global', `Updated settings: ${JSON.stringify(settings)}`);
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+// Settings handled at end of file
 
 // --- INVENTORY API ---
 app.get('/api/inventory', async (req, res) => {
@@ -446,11 +532,13 @@ app.get('/api/inventory', async (req, res) => {
 
 app.post('/api/inventory', authorize(['admin']), async (req, res) => {
     const { name, stock_qty, unit, low_stock_threshold, expiry_date } = req.body;
-    const errors = validate(['name', 'stock_qty', 'unit', 'low_stock_threshold'], req.body);
+    const errors = validate({
+        name: { required: true },
+        stock_qty: { required: true, type: 'number', min: 0 },
+        unit: { required: true },
+        low_stock_threshold: { required: true, type: 'number', min: 0 }
+    }, req.body);
     if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
-    
-    if (parseFloat(stock_qty) < 0) return res.status(400).json({ error: "Stock quantity cannot be negative" });
-    if (parseFloat(low_stock_threshold) < 0) return res.status(400).json({ error: "Threshold cannot be negative" });
 
     try {
         const result = await runQuery("INSERT INTO inventory (name, stock_qty, unit, low_stock_threshold, expiry_date) VALUES (?, ?, ?, ?, ?)", 
@@ -464,11 +552,13 @@ app.post('/api/inventory', authorize(['admin']), async (req, res) => {
 
 app.put('/api/inventory/:id', authorize(['admin']), async (req, res) => {
     const { name, stock_qty, unit, low_stock_threshold, expiry_date } = req.body;
-    const errors = validate(['name', 'stock_qty', 'unit', 'low_stock_threshold'], req.body);
+    const errors = validate({
+        name: { required: true },
+        stock_qty: { required: true, type: 'number', min: 0 },
+        unit: { required: true },
+        low_stock_threshold: { required: true, type: 'number', min: 0 }
+    }, req.body);
     if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
-
-    if (parseFloat(stock_qty) < 0) return res.status(400).json({ error: "Stock quantity cannot be negative" });
-    if (parseFloat(low_stock_threshold) < 0) return res.status(400).json({ error: "Threshold cannot be negative" });
 
     try {
         const result = await runQuery("UPDATE inventory SET name=?, stock_qty=?, unit=?, low_stock_threshold=?, expiry_date=? WHERE id=?", 
@@ -501,9 +591,12 @@ app.get('/api/tables', async (req, res) => {
     }
 });
 
-app.post('/api/tables', authorize(['admin']), async (req, res) => {
+app.post('/api/tables', authorize(['admin', 'manager']), async (req, res) => {
     const { name, seats } = req.body;
-    const errors = validate(['name', 'seats'], req.body);
+    const errors = validate({
+        name: { required: true },
+        seats: { required: true, type: 'number', min: 1, max: 20 }
+    }, req.body);
     if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
     if (parseInt(seats) <= 0) return res.status(400).json({ error: "Seats must be a positive number" });
 
@@ -516,12 +609,15 @@ app.post('/api/tables', authorize(['admin']), async (req, res) => {
     }
 });
 
-app.put('/api/tables/:id', authorize(['admin']), async (req, res) => {
-    const { name, status, seats } = req.body;
-    const errors = validate(['name', 'status', 'seats'], req.body);
+app.put('/api/tables/:id', authorize(['admin', 'manager']), async (req, res) => {
+    const { name, seats, status } = req.body;
+    const errors = validate({
+        name: { required: true },
+        seats: { required: true, type: 'number', min: 1, max: 20 },
+        status: { required: true, enum: ['Available', 'Occupied', 'Reserved', 'Dirty'] }
+    }, req.body);
     if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
     if (parseInt(seats) <= 0) return res.status(400).json({ error: "Seats must be a positive number" });
-    if (!['Available', 'Occupied', 'Reserved'].includes(status)) return res.status(400).json({ error: "Invalid status" });
 
     try {
         const result = await runQuery("UPDATE restaurant_tables SET name=?, status=?, seats=? WHERE id=?", [name, status, seats, req.params.id]);
@@ -532,55 +628,8 @@ app.put('/api/tables/:id', authorize(['admin']), async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-app.patch('/api/tables/:id/status', async (req, res) => {
-    const { status } = req.body;
-    if (!['Available', 'Occupied', 'Reserved'].includes(status)) {
-        return res.status(400).json({ error: "Invalid status" });
-    }
 
-    try {
-        const result = await runQuery("UPDATE restaurant_tables SET status=? WHERE id=?", [status, req.params.id]);
-        if (result.changes === 0) return res.status(404).json({ error: "Table not found" });
-        await addAuditLog(req.headers['x-user-id'], 'UPDATE_STATUS', 'TABLE', req.params.id, `Changed table status to ${status}`);
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// --- USERS API (Admin Only)
-app.get('/api/users', authorize(['admin']), async (req, res) => {
-    try {
-        const users = await allQuery("SELECT id, username, role, name FROM users");
-        res.json(users);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/users', authorize(['admin']), async (req, res) => {
-    const { username, password, role, name } = req.body;
-    const errors = validate(['username', 'password', 'role', 'name'], req.body);
-    if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
-
-    try {
-        const result = await runQuery("INSERT INTO users (username, password, role, name) VALUES (?, ?, ?, ?)", [username, password, role, name]);
-        await addAuditLog(req.headers['x-user-id'], 'CREATE', 'USER', result.lastID, `Created user ${username} with role ${role}`);
-        res.json({ id: result.lastID });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.delete('/api/users/:id', authorize(['admin']), async (req, res) => {
-    try {
-        await runQuery("DELETE FROM users WHERE id = ?", [req.params.id]);
-        await addAuditLog(req.headers['x-user-id'], 'DELETE', 'USER', req.params.id, `Deleted user ID ${req.params.id}`);
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+// --- CUSTOMERS API ---
 
 app.get('/api/customers', async (req, res) => {
     try {
@@ -591,9 +640,13 @@ app.get('/api/customers', async (req, res) => {
     }
 });
 
-app.post('/api/customers', authorize(['admin', 'cashier']), async (req, res) => {
-    const { name, phone, email } = req.body;
-    const errors = validate(['name', 'phone'], req.body);
+app.post('/api/customers', authorize(['admin', 'manager', 'cashier']), async (req, res) => {
+    const { name, phone, email, address } = req.body;
+    const errors = validate({
+        name: { required: true },
+        phone: { required: true },
+        email: { pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ }
+    }, req.body);
     if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
 
     try {
@@ -604,9 +657,15 @@ app.post('/api/customers', authorize(['admin', 'cashier']), async (req, res) => 
     }
 });
 
-app.put('/api/customers/:id', authorize(['admin', 'cashier']), async (req, res) => {
+app.put('/api/customers/:id', authorize(['admin', 'manager', 'cashier']), async (req, res) => {
     const { name, phone, email, loyalty_points, total_spent } = req.body;
-    const errors = validate(['name', 'phone'], req.body);
+    const errors = validate({
+        name: { required: true },
+        phone: { required: true },
+        email: { pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ },
+        loyalty_points: { type: 'number', min: 0 },
+        total_spent: { type: 'number', min: 0 }
+    }, req.body);
     if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
 
     try {
@@ -629,7 +688,7 @@ app.delete('/api/customers/:id', authorize(['admin']), async (req, res) => {
     }
 });
 
-app.delete('/api/tables/:id', authorize(['admin']), async (req, res) => {
+app.delete('/api/tables/:id', authorize(['admin', 'manager']), async (req, res) => {
     try {
         await runQuery("DELETE FROM restaurant_tables WHERE id = ?", [req.params.id]);
         await addAuditLog(req.headers['x-user-id'], 'DELETE', 'TABLE', req.params.id, `Deleted table ID ${req.params.id}`);
@@ -640,7 +699,7 @@ app.delete('/api/tables/:id', authorize(['admin']), async (req, res) => {
 });
 
 // --- ANALYTICS API (Admin Only)
-app.get('/api/analytics', authorize(['admin']), async (req, res) => {
+app.get('/api/analytics', authorize(['admin', 'manager']), async (req, res) => {
     try {
         const today = new Date().toISOString().split('T')[0];
         
@@ -699,7 +758,7 @@ const defaultSettings = {
     business_phone: '+1 555-123-4567',
     business_email: 'info@ascendia.com',
     tax_rate: '10',
-    currency_symbol: '$',
+    currency_symbol: 'Rs.',
     receipt_footer: 'Thank you for dining with us!',
     allow_discounts: 'true',
     low_stock_threshold: '10',
@@ -727,9 +786,22 @@ app.get('/api/settings', async (req, res) => {
 });
 
 app.put('/api/settings', authorize(['admin']), async (req, res) => {
+    const updates = req.body;
+    
+    // Validation for key settings
+    if (updates.tax_rate !== undefined) {
+        const tr = parseFloat(updates.tax_rate);
+        if (isNaN(tr) || tr < 0 || tr > 100) return res.status(400).json({ error: "Tax rate must be between 0 and 100" });
+    }
+    if (updates.business_name !== undefined && !updates.business_name.trim()) {
+        return res.status(400).json({ error: "Business name is required" });
+    }
+    if (updates.currency_symbol !== undefined && !updates.currency_symbol.trim()) {
+        return res.status(400).json({ error: "Currency symbol is required" });
+    }
+
     try {
         await runQuery(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
-        const updates = req.body;
         for (const [key, value] of Object.entries(updates)) {
             await runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, String(value)]);
         }
