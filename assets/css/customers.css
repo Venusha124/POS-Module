@@ -1,0 +1,61 @@
+.customers-layout {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.customers-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.customers-panel {
+    background-color: var(--bg-card);
+    border-radius: var(--border-radius-md);
+    padding: 24px;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+    flex: 1;
+    overflow-y: auto;
+}
+
+.customers-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.customers-table th, .customers-table td {
+    text-align: left;
+    padding: 16px;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 14px;
+}
+
+.customers-table th {
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.customers-table tr:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.loyalty-badge {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.spent-badge {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}

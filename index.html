@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tasty Station - POS System</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-logo">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-bowl-food"></i>
+                </div>
+                <div class="logo-text">
+                    <h2>Tasty</h2>
+                    <p>Station</p>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="#/dashboard" class="nav-item" data-route="/dashboard">
+                    <i class="fa-solid fa-border-all"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#/order-line" class="nav-item" data-route="/order-line">
+                    <i class="fa-solid fa-receipt"></i>
+                    <span>Order Line</span>
+                </a>
+                <a href="#/history" class="nav-item" data-route="/history">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span>Order History</span>
+                </a>
+                <a href="#/tables" class="nav-item" data-route="/tables">
+                    <i class="fa-solid fa-chair"></i>
+                    <span>Manage Table</span>
+                </a>
+                <a href="#/dishes" class="nav-item active" data-route="/dishes">
+                    <i class="fa-solid fa-bell-concierge"></i>
+                    <span>Manage Dishes</span>
+                </a>
+                <a href="#/customers" class="nav-item" data-route="/customers">
+                    <i class="fa-solid fa-users"></i>
+                    <span>Customers</span>
+                </a>
+                <a href="#/users" class="nav-item" data-route="/users">
+                    <i class="fa-solid fa-user-shield"></i>
+                    <span>Staff & Users</span>
+                </a>
+                <a href="#/kitchen" class="nav-item" data-route="/kitchen">
+                    <i class="fa-solid fa-fire-burner"></i>
+                    <span>Kitchen Display</span>
+                </a>
+                <a href="#/settings" class="nav-item" data-route="/settings">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>Settings</span>
+                </a>
+                <a href="#/help" class="nav-item" data-route="/help">
+                    <i class="fa-regular fa-circle-question"></i>
+                    <span>Help Center</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="#" class="nav-item logout">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                    <span>Logout</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-container">
+            <!-- Topbar -->
+            <header class="topbar">
+                <div class="search-bar">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" placeholder="Search menu, orders and more">
+                </div>
+                
+                <div class="topbar-actions">
+                    <button class="notification-btn">
+                        <i class="fa-regular fa-bell"></i>
+                        <span class="badge"></span>
+                    </button>
+                    <div class="user-profile">
+                        <img src="https://ui-avatars.com/api/?name=Ibrahim+Kadri&background=00BFA5&color=fff" alt="User Profile" class="avatar">
+                        <div class="user-info">
+                            <span class="user-name">Ibrahim Kadri</span>
+                            <span class="user-role">Admin</span>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dynamic View Container -->
+            <div id="app-view" class="view-container">
+                <!-- Content gets injected here by app.js -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="assets/js/store.js"></script>
+    <script src="assets/js/app.js"></script>
+</body>
+</html>

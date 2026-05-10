@@ -1,0 +1,2336 @@
+/**
+ * App Version: 1.2.0 (Stable delegation)
+ * Last Updated: 2026-05-10
+ */
+window.showToast = function(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    
+    let icon = 'fa-check-circle';
+    if (type === 'error') icon = 'fa-circle-xmark';
+    if (type === 'warning') icon = 'fa-triangle-exclamation';
+    
+    toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${message}</span>`;
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        toast.style.transition = 'all 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+};
+
+window.validatePhone = (phone) => {
+    return /^[0-9+-\s]{7,15}$/.test(phone);
+};
+
+window.markInvalid = function(elementId) {
+    const el = document.getElementById(elementId);
+    if (el) {
+        el.classList.add('invalid');
+        el.addEventListener('input', () => el.classList.remove('invalid'), { once: true });
+    }
+};
+
+window.clearValidations = function(containerSelector) {
+    const container = document.querySelector(containerSelector) || document;
+    container.querySelectorAll('.invalid').forEach(el => el.classList.remove('invalid'));
+};
+
+window.showConfirm = function(title, message, onConfirm, type = 'primary', showInput = false, inputPlaceholder = '') {
+    const color = type === 'danger' ? '#ef4444' : 'var(--primary)';
+    const btnClass = type === 'danger' ? 'btn-danger' : 'btn-primary';
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <i class="fa-solid fa-circle-question" style="font-size: 48px; color: ${color}; margin-bottom: 24px; display: block;"></i>
+            <h3>${title}</h3>
+            <p style="color: var(--text-muted); margin-bottom: 24px; font-size: 15px; line-height: 1.5;">${message}</p>
+            
+            ${showInput ? `
+                <div class="form-group" style="text-align: left; margin-bottom: 24px;">
+                    <label style="font-size: 11px;">Reason for Action</label>
+                    <textarea id="confirmInput" placeholder="${inputPlaceholder}" style="width: 100%; height: 80px; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; font-family: inherit; font-size: 14px;"></textarea>
+                    <div id="confirmInputError" style="color: #ef4444; font-size: 11px; margin-top: 4px; display: none;">Reason is required to proceed.</div>
+                </div>
+            ` : ''}
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-outline" id="confirmCancel">Cancel</button>
+                <button type="button" class="btn ${btnClass}" id="confirmOk">Confirm</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    document.getElementById('confirmCancel').onclick = () => modal.remove();
+    document.getElementById('confirmOk').onclick = () => { 
+        if (showInput) {
+            const val = document.getElementById('confirmInput').value.trim();
+            if (!val) {
+                document.getElementById('confirmInputError').style.display = 'block';
+                document.getElementById('confirmInput').style.borderColor = '#ef4444';
+                return;
+            }
+            onConfirm(val);
+        } else {
+            onConfirm(); 
+        }
+        modal.remove(); 
+    };
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    const appView = document.getElementById('app-view');
+    const navItems = document.querySelectorAll('.sidebar-nav .nav-item');
+
+    // Routing Logic
+    const routes = {
+        '/login': renderLogin,
+        '/dashboard': renderDashboard,
+        '/order-line': renderOrderLine,
+        '/history': renderHistory,
+        '/tables': renderTables,
+        '/dishes': renderDishes,
+        '/customers': renderCustomers,
+        '/users': renderUsers,
+        '/kitchen': renderKitchen,
+        '/settings': renderSettings,
+        '/help': renderHelp
+    };
+
+    const roleAccess = {
+        'admin': ['/dashboard', '/order-line', '/history', '/tables', '/dishes', '/customers', '/users', '/kitchen', '/settings', '/help'],
+        'cashier': ['/order-line', '/history', '/tables', '/customers'],
+        'kitchen': ['/kitchen']
+    };
+
+    // Socket.io for Real-time Kitchen Updates
+    const socket = io();
+
+    socket.on('new_order', (order) => {
+        // Play notification sound
+        try {
+            const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+            audio.play().catch(e => console.log("Sound play blocked", e));
+        } catch(e) {}
+
+        // If we are currently on the kitchen view, we should re-render or add the ticket
+        if (window.location.hash.includes('/kitchen')) {
+            store.data.orders.unshift(order);
+            handleRoute(); // brute force re-render for simplicity
+        } else {
+            // Update notification badge
+            const badge = document.querySelector('.notification-btn .badge');
+            if(badge) badge.style.display = 'block';
+        }
+    });
+
+    socket.on('order_updated', (data) => {
+        const order = store.data.orders.find(o => o.id === data.id);
+        if (order) order.status = data.status;
+        
+        if (window.location.hash.includes('/kitchen') || window.location.hash.includes('/dashboard')) {
+            handleRoute(); 
+        }
+    });
+
+    function handleRoute() {
+        let hash = window.location.hash.replace('#', '');
+        const user = store.data.currentUser;
+
+        // Force login if not authenticated
+        if (!user) {
+            hash = '/login';
+            window.location.hash = '#/login';
+        } else if (hash === '/login' || !hash) {
+            // Redirect to home route based on role if they hit root or login while authenticated
+            hash = user.role === 'kitchen' ? '/kitchen' : (user.role === 'admin' ? '/dashboard' : '/order-line');
+            window.location.hash = '#' + hash;
+        }
+
+        // Check RBAC Authorization
+        if (user && hash !== '/login' && !roleAccess[user.role].includes(hash)) {
+            const fallback = user.role === 'kitchen' ? '/kitchen' : (user.role === 'admin' ? '/dashboard' : '/order-line');
+            window.location.hash = '#' + fallback;
+            return; // Will re-trigger hashchange
+        }
+
+        // Layout visibility (Hide sidebar/topbar on login)
+        const sidebar = document.getElementById('sidebar');
+        const topbar = document.querySelector('.topbar');
+        if (hash === '/login') {
+            if(sidebar) sidebar.style.display = 'none';
+            if(topbar) topbar.style.display = 'none';
+        } else {
+            if(sidebar) sidebar.style.display = 'flex';
+            if(topbar) topbar.style.display = 'flex';
+            
+            // Update Topbar Profile Name
+            const userNameEl = document.querySelector('.user-name');
+            const userRoleEl = document.querySelector('.user-role');
+            if(userNameEl) userNameEl.textContent = user.name;
+            if(userRoleEl) userRoleEl.textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
+
+            // Filter Sidebar Links
+            navItems.forEach(item => {
+                const route = item.getAttribute('data-route');
+                if (roleAccess[user.role].includes(route)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+                
+                // Update active state
+                if (route === hash) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+        }
+
+        // Render View
+        const renderer = routes[hash];
+        if (renderer) {
+            appView.innerHTML = '';
+            // Network Status Indicator
+            let onlineBadge = document.getElementById('onlineStatus');
+            if (!onlineBadge) {
+                onlineBadge = document.createElement('div');
+                onlineBadge.id = 'onlineStatus';
+                document.body.appendChild(onlineBadge);
+            }
+            onlineBadge.style = `
+                position: fixed; top: 16px; right: 280px; z-index: 1000;
+                padding: 4px 12px; border-radius: 50px; font-size: 11px; font-weight: 700;
+                background: ${store.data.isOnline ? '#d1fae5' : '#fee2e2'};
+                color: ${store.data.isOnline ? '#065f46' : '#991b1b'};
+                display: flex; align-items: center; gap: 6px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            `;
+            onlineBadge.innerHTML = `<span style="width:6px; height:6px; border-radius:50%; background:currentColor;"></span> ${store.data.isOnline ? 'ONLINE' : 'OFFLINE MODE'}`;
+
+            window.addEventListener('network_status_change', () => {
+                const badge = document.getElementById('onlineStatus');
+                if (badge) {
+                    badge.style.background = store.data.isOnline ? '#d1fae5' : '#fee2e2';
+                    badge.style.color = store.data.isOnline ? '#065f46' : '#991b1b';
+                    badge.innerHTML = `<span style="width:6px; height:6px; border-radius:50%; background:currentColor;"></span> ${store.data.isOnline ? 'ONLINE' : 'OFFLINE MODE'}`;
+                }
+            });
+
+            renderer(appView);
+        } else {
+            appView.innerHTML = `<h2>Page Not Found</h2>`;
+        }
+    }
+
+    // Wait for store to fetch data from backend
+    window.addEventListener('store_ready', () => {
+        // Bind Logout
+        const logoutBtn = document.querySelector('.logout');
+        if(logoutBtn) {
+            logoutBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                store.logout();
+                window.location.hash = '#/login';
+            });
+        }
+
+        window.addEventListener('hashchange', handleRoute);
+        handleRoute(); // initial call
+    });
+
+    // --- View Renderers ---
+
+    function renderLogin(container) {
+        if (!document.getElementById('login-css')) {
+            const link = document.createElement('link');
+            link.id = 'login-css';
+            link.rel = 'stylesheet';
+            link.href = 'assets/css/login.css';
+            document.head.appendChild(link);
+        }
+
+        container.innerHTML = `
+            <div class="login-layout">
+                <div class="login-card">
+                    <div class="login-logo">
+                        <div class="logo-icon"><i class="fa-solid fa-bowl-food" style="color:var(--primary);"></i></div>
+                        <h2>Tasty Station</h2>
+                    </div>
+                    <form class="login-form" id="loginForm">
+                        <div class="login-error" id="loginError"></div>
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" id="username" placeholder="e.g. admin, cashier, kitchen" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input type="password" id="password" placeholder="1234" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-login">Login</button>
+                    </form>
+                    <div style="margin-top:24px; font-size:12px; color:var(--text-muted); text-align:left;">
+                        <strong>Demo Accounts:</strong><br>
+                        Admin: <code>admin</code> / <code>1234</code><br>
+                        Cashier: <code>cashier</code> / <code>1234</code><br>
+                        Kitchen: <code>kitchen</code> / <code>1234</code>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const form = document.getElementById('loginForm');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            window.clearValidations('#loginForm');
+            const u = document.getElementById('username');
+            const p = document.getElementById('password');
+            const errDiv = document.getElementById('loginError');
+            
+            if (!u.value.trim()) {
+                window.markInvalid('username');
+                errDiv.textContent = "Username is required";
+                errDiv.style.display = 'block';
+                return;
+            }
+            if (!p.value.trim()) {
+                window.markInvalid('password');
+                errDiv.textContent = "Password is required";
+                errDiv.style.display = 'block';
+                return;
+            }
+
+            const res = await store.login(u.value.trim(), p.value);
+            if (res.success) {
+                handleRoute(); 
+            } else {
+                errDiv.textContent = res.error;
+                errDiv.style.display = 'block';
+            }
+        });
+    }
+
+    async function renderDashboard(container) {
+        if (!document.getElementById('dashboard-css')) {
+            const link = document.createElement('link');
+            link.id = 'dashboard-css';
+            link.rel = 'stylesheet';
+            link.href = 'assets/css/dashboard.css';
+            document.head.appendChild(link);
+        }
+
+        container.innerHTML = `
+            <div style="padding:40px; display:flex; flex-direction:column; align-items:center; gap:20px;">
+                <div class="status-pulse" style="width:40px; height:40px; background:var(--primary); border-radius:50%;"></div>
+                <div style="font-weight:600; color:var(--text-muted);">Syncing Enterprise Data...</div>
+            </div>
+        `;
+        
+        try {
+            const res = await store.fetchAPI('/analytics');
+            const data = await res.json();
+            
+            // Defensive data checks
+            const popularity = data.popularity || [];
+            const weeklyTrends = data.weeklyTrends || [];
+            const peakHours = data.peakHours || [];
+            const lowStockAlerts = data.lowStockAlerts || [];
+
+            // Calculate Sales Trend (Simplified)
+            const trend = weeklyTrends.length >= 2 
+                ? (((weeklyTrends[0].revenue - weeklyTrends[1].revenue) / weeklyTrends[1].revenue) * 100).toFixed(1)
+                : 0;
+
+            container.innerHTML = `
+                <div class="dashboard-layout">
+                    <div class="dash-header">
+                        <div>
+                            <h2>Business Intelligence</h2>
+                            <p style="color:var(--text-muted);">Comprehensive performance overview</p>
+                        </div>
+                        ${lowStockAlerts.length > 0 ? `
+                            <div style="background:#fee2e2; color:#991b1b; padding:10px 20px; border-radius:14px; display:flex; align-items:center; gap:12px; font-weight:700; font-size:13px; animation: pulse-urgent 2s infinite;">
+                                <i class="fa-solid fa-triangle-exclamation"></i> ${lowStockAlerts.length} LOW STOCK ALERTS
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-card" style="animation: fadeIn 0.3s ease;">
+                            <div class="stat-icon"><i class="fa-solid fa-money-bill-trend-up"></i></div>
+                            <div class="stat-info">
+                                <h3>Overall Revenue</h3>
+                                <div class="stat-value">$${data.totalRevenue.toFixed(2)}</div>
+                                <div class="stat-trend ${trend >= 0 ? 'positive' : 'negative'}">
+                                    <i class="fa-solid fa-arrow-trend-${trend >= 0 ? 'up' : 'down'}"></i> ${trend}% WoW
+                                </div>
+                            </div>
+                        </div>
+                        <div class="stat-card" style="animation: fadeIn 0.4s ease;">
+                            <div class="stat-icon" style="background:#e0e7ff; color:#4f46e5;"><i class="fa-solid fa-bolt"></i></div>
+                            <div class="stat-info">
+                                <h3>Daily Volume</h3>
+                                <div class="stat-value">$${data.todayRevenue.toFixed(2)}</div>
+                                <div class="stat-trend positive">ACTIVE SESSION</div>
+                            </div>
+                        </div>
+                        <div class="stat-card" style="animation: fadeIn 0.5s ease;">
+                            <div class="stat-icon" style="background:#fef3c7; color:#d97706;"><i class="fa-solid fa-users"></i></div>
+                            <div class="stat-info">
+                                <h3>Loyalty Base</h3>
+                                <div class="stat-value">${store.data.customers.length}</div>
+                                <div class="stat-trend positive">CUSTOMERS</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dash-bottom" style="margin-top:24px; display:grid; grid-template-columns: 2fr 1fr; gap:24px;">
+                        <div class="card" style="animation: fadeIn 0.6s ease;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                                <h3>Sales Trends (14 Days)</h3>
+                                <div style="font-size:12px; color:var(--text-muted);">Revenue by Day</div>
+                            </div>
+                            <canvas id="revenueChart" height="300"></canvas>
+                        </div>
+                        
+                        <div style="display:flex; flex-direction:column; gap:24px;">
+                            <div class="card" style="animation: fadeIn 0.7s ease;">
+                                <h3 style="margin-bottom:20px;">Popularity Matrix</h3>
+                                <div style="display:flex; flex-direction:column; gap:12px;">
+                                    ${popularity.map(item => `
+                                        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:rgba(0,0,0,0.03); border-radius:12px;">
+                                            <div>
+                                                <div style="font-weight:700; font-size:14px;">${item.name}</div>
+                                                <div style="font-size:11px; color:var(--text-muted);">${item.units_sold} units sold</div>
+                                            </div>
+                                            <div style="font-weight:800; color:var(--primary);">$${(item.revenue || 0).toFixed(2)}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <div class="card" style="animation: fadeIn 0.8s ease; background:rgba(255,255,255,0.4);">
+                                <h3 style="margin-bottom:20px;">Peak Hours</h3>
+                                <div style="display:flex; align-items:flex-end; gap:8px; height:80px; padding-bottom:10px;">
+                                    ${peakHours.map(h => {
+                                        const max = Math.max(...peakHours.map(x => x.count), 1);
+                                        const height = (h.count / max) * 100;
+                                        return `
+                                            <div style="flex:1; background:var(--primary); height:${height}%; border-radius:4px; opacity:${0.3 + (height/200)};" title="${h.hour}:00 - ${h.count} orders"></div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                                <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-muted); font-weight:700;">
+                                    <span>00:00</span>
+                                    <span>PEAK LOAD</span>
+                                    <span>23:00</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${lowStockAlerts.length > 0 ? `
+                        <div class="card" style="margin-top:24px; border-color:#fee2e2;">
+                            <h3 style="margin-bottom:16px; color:#991b1b;"><i class="fa-solid fa-triangle-exclamation"></i> Critical Low Stock Items</h3>
+                            <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:16px;">
+                                ${lowStockAlerts.map(item => `
+                                    <div style="padding:16px; background:#fff; border-radius:14px; border:1px solid #fee2e2;">
+                                        <div style="font-weight:700; margin-bottom:4px;">${item.name}</div>
+                                        <div style="color:#ef4444; font-weight:800; font-size:18px;">${item.stock_qty} ${item.unit}</div>
+                                        <div style="font-size:11px; color:var(--text-muted);">Threshold: ${item.low_stock_threshold}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            const ctx = document.getElementById('revenueChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [...weeklyTrends].reverse().map(t => new Date(t.date).toLocaleDateString([], {month: 'short', day: 'numeric'})),
+                    datasets: [{
+                        label: 'Daily Revenue',
+                        data: [...weeklyTrends].reverse().map(t => t.revenue),
+                        borderColor: '#15b99a',
+                        backgroundColor: 'rgba(21, 185, 154, 0.1)',
+                        borderWidth: 4,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#15b99a'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+            
+        } catch(e) {
+            console.error(e);
+            container.innerHTML = `<div style="padding:40px; color:red;">Failed to load Business Intelligence data. ${e.message}</div>`;
+        }
+    }
+
+    function renderOrderLine(container) {
+        if (!document.getElementById('order-line-css')) {
+            const link = document.createElement('link');
+            link.id = 'order-line-css';
+            link.rel = 'stylesheet';
+            link.href = 'assets/css/order-line.css';
+            document.head.appendChild(link);
+        }
+
+        const categories = store.getCategories();
+        let activeCategory = 'all';
+        let modalDish = null;
+        let modalMode = 'add';
+        let modalQty = 1;
+
+        // 1. Render Main Layout Shell
+        container.innerHTML = `
+            <div class="order-layout">
+                <div class="order-main">
+                    <div class="order-categories-scroll"></div>
+                    <div class="order-grid"></div>
+                </div>
+                <div class="order-cart-panel">
+                    <div class="cart-header">
+                        <h3>Current Order</h3>
+                        <span class="cart-order-id">#ORD-${Math.floor(1000 + Math.random() * 9000)}</span>
+                    </div>
+                    <div class="cart-actions">
+                        <button class="cart-action-btn" id="selectTableBtn">
+                            <i class="fa-solid fa-chair"></i> Table
+                        </button>
+                        <button class="cart-action-btn" id="selectCustBtn">
+                            <i class="fa-solid fa-user"></i> Customer
+                        </button>
+                    </div>
+                    <div class="cart-items"></div>
+                    <div class="cart-summary">
+                        <div class="summary-row"><span>Subtotal</span><span class="summary-subtotal">$0.00</span></div>
+                        <div class="summary-row"><span>Tax (10%)</span><span class="summary-tax">$0.00</span></div>
+                        <div class="summary-total"><span>Total</span><span class="summary-total-val">$0.00</span></div>
+                        <div class="order-type-toggle">
+                            <button class="type-btn active" data-type="Dine In">Dine In</button>
+                            <button class="type-btn" data-type="Takeaway">Takeaway</button>
+                        </div>
+                        <button class="btn btn-primary checkout-btn"><i class="fa-solid fa-wallet"></i> Pay Now</button>
+                    </div>
+                </div>
+            </div>
+            <!-- Modals (itemModal, paymentModal, receiptModal) -->
+            <div id="orderModalsContainer"></div>
+        `;
+
+        // Inject Modals into a dedicated container to avoid clearing them
+        const modalsContainer = container.querySelector('#orderModalsContainer');
+        modalsContainer.innerHTML = `
+            <div id="itemModal" class="modal-overlay" style="display:none;">
+                <div class="modal-content" style="max-width: 400px; text-align: center;">
+                    <h3 id="itemModalTitle" style="margin-bottom: 8px;">Add Item</h3>
+                    <img id="itemModalImg" src="" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; margin: 0 auto 16px;">
+                    <h4 id="itemModalName" style="font-size: 18px; margin-bottom: 4px;"></h4>
+                    <div id="itemModalPrice" style="color: var(--primary); font-weight: 600; font-size: 16px; margin-bottom: 24px;"></div>
+                    <div style="background: rgba(0,0,0,0.03); padding: 15px; border-radius: 50px; display: inline-flex; align-items: center; justify-content: center; gap: 30px; margin-bottom: 30px; border: 1px solid rgba(0,0,0,0.02);">
+                        <button id="itemModalMinus" class="btn-qty"><i class="fa-solid fa-minus"></i></button>
+                        <span id="itemModalQty" style="font-size: 32px; font-weight: 800; min-width: 40px;">1</span>
+                        <button id="itemModalPlus" class="btn-qty"><i class="fa-solid fa-plus"></i></button>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-outline" id="closeItemModal" style="border-radius: 20px;">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="saveItemModalBtn" style="border-radius: 20px;">Add to Cart</button>
+                    </div>
+                    <div id="removeItemContainer" style="margin-top: 12px; display: none;">
+                        <button type="button" class="btn" id="removeItemModalBtn" style="color: #ef4444; background: none; text-decoration: underline;">Remove Item</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="paymentModal" class="modal-overlay" style="display:none;">
+                <div class="modal-content" style="width: 480px;">
+                    <h3>Finalize Payment</h3>
+                    <div class="payment-total-box" style="background:var(--primary-light); padding:20px; border-radius:12px; text-align:center; margin:24px 0;">
+                        <span id="paymentModalTotal" style="font-size:32px; font-weight:800; color:var(--primary);">$0.00</span>
+                    </div>
+                    <div class="payment-options" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:20px;">
+                        <button class="payment-opt-btn active" data-method="Cash"><span>CASH</span></button>
+                        <button class="payment-opt-btn" data-method="Card"><span>CARD</span></button>
+                        <button class="payment-opt-btn" data-method="QR"><span>QR PAYMENTS</span></button>
+                    </div>
+                    <div id="paymentDetailsArea" style="display:none; margin-bottom:20px;">
+                        <div id="cardFields">
+                            <input type="text" id="cardNameInput" placeholder="Card Name" style="width:100%; padding:12px; border:1px solid var(--border-color); border-radius:8px; margin-bottom:12px; background:rgba(255,255,255,0.05); color:var(--text-main); outline:none;">
+                            <input type="text" id="cardNumInput" placeholder="Card Number (16 digits)" style="width:100%; padding:12px; border:1px solid var(--border-color); border-radius:8px; margin-bottom:12px; background:rgba(255,255,255,0.05); color:var(--text-main); outline:none;" maxlength="19">
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                                <input type="text" id="cardExpiryInput" placeholder="Expiry Date (MM/YY)" style="width:100%; padding:12px; border:1px solid var(--border-color); border-radius:8px; background:rgba(255,255,255,0.05); color:var(--text-main); outline:none;" maxlength="5">
+                                <input type="text" id="cardCVVInput" placeholder="CVV" style="width:100%; padding:12px; border:1px solid var(--border-color); border-radius:8px; background:rgba(255,255,255,0.05); color:var(--text-main); outline:none;" maxlength="4">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn btn-outline" id="closePaymentModal">Cancel</button>
+                        <button class="btn btn-primary" id="completePaymentBtn">Complete Payment</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="receiptModal" class="modal-overlay" style="display:none;">
+                <div class="modal-content" style="width: 380px;">
+                    <div id="receiptContent" style="background:white; padding:20px; color:black; font-family:monospace;">
+                        <div style="text-align:center;">
+                            <h2>Tasty Station</h2>
+                            <div style="font-size:11px; color:#555;">123 Culinary Ave, Foodville</div>
+                        </div>
+                        <div class="receipt-info" style="margin:15px 0; font-size:12px; display:grid; grid-template-columns: 1fr 1fr; gap:5px;">
+                            <div>Date: <span id="receiptDate"></span></div>
+                            <div>Order ID: <span id="receiptOrderId"></span></div>
+                            <div>Type: <span id="receiptOrderType"></span></div>
+                            <div>Target: <span id="receiptTarget"></span></div>
+                            <div>Payment: <span id="receiptPayment"></span></div>
+                        </div>
+                        <div id="receiptItems" style="margin:10px 0; border-top:1px dashed #ccc; padding-top:10px; font-size:12px;"></div>
+                        <div style="border-top:1px dashed #ccc; padding-top:10px; font-size:12px;">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Subtotal:</span> <span id="receiptSubtotal"></span></div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Tax (10%):</span> <span id="receiptTax"></span></div>
+                        </div>
+                        <div style="border-top:1px dashed #ccc; padding-top:10px; font-weight:bold; font-size:14px; display:flex; justify-content:space-between;">
+                            <span>Total:</span> <span id="receiptTotal"></span>
+                        </div>
+                        <div style="text-align:center; margin-top:20px; font-size:11px; color:#555;">
+                            Thank you for dining with us!
+                        </div>
+                    </div>
+                    <div class="modal-actions" style="display:grid; gap:10px; margin-top:20px;">
+                        <button class="btn btn-primary" id="sendToKitchenBtn">Send Order in to the kitchen</button>
+                        <button class="btn btn-primary" id="shareMobileBtn">Send Receipt to Mobile</button>
+                        <button class="btn btn-outline" id="printReceiptBtn">Print Receipt</button>
+                        <button class="btn btn-primary" id="closeReceiptBtn">New Order</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // 2. Local View Functions
+        const updateCartView = () => {
+            const cartItems = store.data.cart;
+            const container_items = container.querySelector('.cart-items');
+            
+            if (cartItems.length === 0) {
+                container_items.innerHTML = '<div class="cart-empty">Cart is empty</div>';
+                container.querySelector('.summary-subtotal').textContent = '$0.00';
+                container.querySelector('.summary-tax').textContent = '$0.00';
+                container.querySelector('.summary-total-val').textContent = '$0.00';
+                return;
+            }
+
+            container_items.innerHTML = cartItems.map(item => `
+                <div class="cart-item" data-id="${item.dish.id}">
+                    <img src="${item.dish.image}" class="cart-item-img">
+                    <div class="cart-item-info">
+                        <div class="cart-item-name">${item.dish.name}</div>
+                        <div class="cart-item-price">$${(item.dish.price * item.qty).toFixed(2)}</div>
+                    </div>
+                    <div class="cart-item-qty">x${item.qty}</div>
+                </div>
+            `).join('');
+
+            const taxRate = 0.1; 
+            const subtotal = cartItems.reduce((sum, item) => sum + (item.dish.price * item.qty), 0);
+            const total = subtotal * (1 + taxRate);
+            
+            container.querySelector('.summary-subtotal').textContent = '$' + subtotal.toFixed(2);
+            container.querySelector('.summary-tax').textContent = '$' + (subtotal * taxRate).toFixed(2);
+            container.querySelector('.summary-total-val').textContent = '$' + total.toFixed(2);
+
+            // Re-bind item click in cart for edit
+            container_items.querySelectorAll('.cart-item').forEach(el => {
+                el.addEventListener('click', () => {
+                    const id = el.getAttribute('data-id');
+                    const item = store.data.cart.find(i => i.dish.id == id);
+                    if (item) {
+                        modalDish = item.dish;
+                        modalMode = 'edit';
+                        modalQty = item.qty;
+                        openItemModal();
+                    }
+                });
+            });
+        };
+
+        const renderCategories = () => {
+            const catContainer = container.querySelector('.order-categories-scroll');
+            catContainer.innerHTML = categories.map(cat => `
+                <button class="order-cat-btn ${cat.id === activeCategory ? 'active' : ''}" data-id="${cat.id}">
+                    <span>${cat.icon}</span> ${cat.name}
+                </button>
+            `).join('');
+
+            catContainer.querySelectorAll('.order-cat-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    activeCategory = btn.getAttribute('data-id');
+                    renderCategories();
+                    renderGrid();
+                });
+            });
+        };
+
+        const renderGrid = () => {
+            const dishes = store.getDishes(activeCategory);
+            const grid = container.querySelector('.order-grid');
+            grid.innerHTML = dishes.map(dish => `
+                <div class="order-dish-card" data-dish='${JSON.stringify(dish)}'>
+                    <img src="${dish.image}" class="order-dish-img">
+                    <h4 class="order-dish-name">${dish.name}</h4>
+                    <div class="order-dish-price">$${dish.price.toFixed(2)}</div>
+                </div>
+            `).join('');
+
+            grid.querySelectorAll('.order-dish-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    modalDish = JSON.parse(card.getAttribute('data-dish'));
+                    modalMode = 'add';
+                    modalQty = 1;
+                    openItemModal();
+                });
+            });
+        };
+
+        const openItemModal = () => {
+            const modal = document.getElementById('itemModal');
+            document.getElementById('itemModalTitle').textContent = modalMode === 'add' ? 'Add to Cart' : 'Edit Item';
+            document.getElementById('itemModalImg').src = modalDish.image;
+            document.getElementById('itemModalName').textContent = modalDish.name;
+            document.getElementById('itemModalPrice').textContent = '$' + (modalDish.price * modalQty).toFixed(2);
+            document.getElementById('itemModalQty').textContent = modalQty;
+            document.getElementById('removeItemContainer').style.display = modalMode === 'edit' ? 'block' : 'none';
+            modal.style.display = 'flex';
+        };
+
+        // 3. Bind Persistent Listeners (using global delegation for maximum stability)
+        const handleGlobalClick = async (e) => {
+            if (window.location.hash !== '#/order-line') return;
+            
+            const target = e.target.closest('button, .cart-item, .order-dish-card, .table-card, .cust-card');
+            if (!target) return;
+
+            console.log('Global Click Intercepted:', target.id || target.className);
+
+            // Table Selection Button
+            if (target.id === 'selectTableBtn') {
+                if (store.data.currentOrderType === 'Takeaway') {
+                    return window.showToast("Tables are only for Dine-In orders. Switch to Dine-In to select a table.", "warning");
+                }
+                const tables = store.data.tables;
+                const modal = document.createElement('div');
+                modal.className = 'modal-overlay';
+                modal.style.display = 'flex';
+                modal.innerHTML = `
+                    <div class="modal-content" style="width: 500px;">
+                        <h3>Select Table</h3>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 15px 0;">
+                            ${tables.map(t => `
+                                <div class="table-card ${t.status}" data-id="${t.id}" style="padding:15px; border:1px solid var(--glass-border); border-radius:12px; cursor:pointer; text-align:center; background:rgba(255,255,255,0.05); transition:background 0.2s;">
+                                    <div style="font-weight:bold; color:var(--text-main); margin-bottom:5px;">${t.name}</div>
+                                    <div style="font-size:11px; font-weight:600; color:${t.status === 'Available' ? 'var(--primary)' : '#ef4444'};">${t.status}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="modal-actions"><button class="btn btn-outline" id="closeTableModal" style="width:100%;">Cancel</button></div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                modal.querySelectorAll('.table-card').forEach(card => {
+                    card.onclick = () => {
+                        const id = card.getAttribute('data-id');
+                        store.data.selectedTableId = id;
+                        const table = tables.find(t => t.id == id);
+                        const btn = document.getElementById('selectTableBtn');
+                        if (btn) btn.innerHTML = `<i class="fa-solid fa-chair"></i> ${table.name}`;
+                        modal.remove();
+                    };
+                });
+                document.getElementById('closeTableModal').onclick = () => modal.remove();
+            }
+
+            // Customer Selection Button
+            if (target.id === 'selectCustBtn') {
+                const customers = store.data.customers;
+                const modal = document.createElement('div');
+                modal.className = 'modal-overlay';
+                modal.style.display = 'flex';
+                modal.innerHTML = `
+                    <div class="modal-content" style="width: 400px;">
+                        <h3>Select Customer</h3>
+                        <div style="display:flex; gap:10px; margin-bottom:10px;">
+                            <input type="text" id="searchCustInput" placeholder="Search by Mobile or Name..." style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border-color); background:rgba(255,255,255,0.05); color:var(--text-main); outline:none;">
+                            <button class="btn btn-primary" id="addNewCustBtn" style="white-space:nowrap;">+ Add New</button>
+                        </div>
+                        <div id="custSelectGrid" style="max-height:300px; overflow-y:auto; margin-bottom:20px;">
+                            ${customers.map(c => `
+                                <div class="cust-card" data-id="${c.id}" data-name="${c.name}" style="padding:12px; border-bottom:1px solid var(--border-color); cursor:pointer; display:flex; justify-content:space-between; align-items:center; transition:background 0.2s; border-radius:4px;">
+                                    <strong style="color:var(--text-main);">${c.name}</strong>
+                                    <span style="color:var(--text-muted); font-size:13px;"><i class="fa-solid fa-phone"></i> ${c.phone}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="modal-actions"><button class="btn btn-outline" id="closeCustModal" style="width:100%;">Cancel</button></div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                modal.querySelectorAll('.cust-card').forEach(card => {
+                    card.onclick = () => {
+                        store.data.selectedCustomerId = card.getAttribute('data-id');
+                        const btn = document.getElementById('selectCustBtn');
+                        if (btn) btn.innerHTML = `<i class="fa-solid fa-user"></i> ${card.getAttribute('data-name')}`;
+                        modal.remove();
+                    };
+                    card.onmouseover = () => card.style.background = 'rgba(255,255,255,0.1)';
+                    card.onmouseout = () => card.style.background = 'transparent';
+                });
+
+                document.getElementById('searchCustInput').addEventListener('input', (e) => {
+                    const query = e.target.value.toLowerCase();
+                    modal.querySelectorAll('.cust-card').forEach(card => {
+                        const text = card.textContent.toLowerCase();
+                        card.style.display = text.includes(query) ? 'flex' : 'none';
+                    });
+                });
+
+                document.getElementById('closeCustModal').onclick = () => modal.remove();
+                document.getElementById('addNewCustBtn').onclick = () => {
+                    modal.remove();
+                    const addModal = document.createElement('div');
+                    addModal.className = 'modal-overlay';
+                    addModal.style.display = 'flex';
+                    addModal.innerHTML = `
+                        <div class="modal-content">
+                            <h3>New Customer</h3>
+                            <input type="text" id="newCustName" placeholder="Name" style="width:100%; margin-bottom:10px; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:rgba(255,255,255,0.05); color:var(--text-main); outline:none;">
+                            <input type="text" id="newCustPhone" placeholder="Phone Number (e.g. 555-1234)" style="width:100%; margin-bottom:20px; padding:12px; border-radius:8px; border:1px solid var(--border-color); background:rgba(255,255,255,0.05); color:var(--text-main); outline:none;">
+                            <div class="modal-actions">
+                                <button class="btn btn-outline" id="cancelAdd">Cancel</button>
+                                <button class="btn btn-primary" id="saveAdd">Save & Select</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(addModal);
+                    document.getElementById('cancelAdd').onclick = () => addModal.remove();
+                    document.getElementById('saveAdd').onclick = async () => {
+                        const name = document.getElementById('newCustName').value.trim();
+                        const phone = document.getElementById('newCustPhone').value.trim();
+                        if (name && window.validatePhone(phone)) {
+                            const res = await store.fetchAPI('/customers', { method: 'POST', body: JSON.stringify({ name, phone }) });
+                            const newC = await res.json();
+                            store.data.customers.push(newC);
+                            store.data.selectedCustomerId = newC.id;
+                            const btn = document.getElementById('selectCustBtn');
+                            if (btn) btn.innerHTML = `<i class="fa-solid fa-user"></i> ${name}`;
+                            addModal.remove();
+                        } else {
+                            window.showToast("Invalid name or phone", "error");
+                        }
+                    };
+                };
+            }
+            
+            // Dish Card Click
+            if (target.classList.contains('order-dish-card')) {
+                modalDish = JSON.parse(target.getAttribute('data-dish'));
+                modalMode = 'add';
+                modalQty = 1;
+                openItemModal();
+            }
+
+            // Cart Item Click
+            if (target.classList.contains('cart-item')) {
+                const id = target.getAttribute('data-id');
+                const item = store.data.cart.find(i => i.dish.id == id);
+                if (item) {
+                    modalDish = item.dish;
+                    modalMode = 'edit';
+                    modalQty = item.qty;
+                    openItemModal();
+                }
+            }
+
+            // Checkout Button
+            if (target.classList.contains('checkout-btn')) {
+                if (store.data.cart.length === 0) return window.showToast("Cart is empty", "warning");
+                if (store.data.currentOrderType === 'Dine In' && !store.data.selectedTableId) return window.showToast("Select Table", "error");
+                if (!store.data.selectedCustomerId) return window.showToast("Select Customer", "error");
+                
+                document.getElementById('paymentModalTotal').textContent = document.querySelector('.summary-total-val').textContent;
+                document.getElementById('paymentModal').style.display = 'flex';
+            }
+
+            // Order Type Toggle
+            if (target.classList.contains('type-btn')) {
+                const type = target.getAttribute('data-type');
+                document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+                target.classList.add('active');
+                store.data.currentOrderType = type;
+                
+                // If switching to Takeaway, clear table selection
+                if (type === 'Takeaway') {
+                    store.data.selectedTableId = null;
+                    const btn = document.getElementById('selectTableBtn');
+                    if (btn) btn.innerHTML = `<i class="fa-solid fa-chair"></i> Table`;
+                }
+            }
+        };
+
+        // Attach once to window
+        window.onclick = handleGlobalClick;
+
+        // Modal Specific Persistent Listeners (using global IDs)
+        document.getElementById('itemModalPlus').onclick = () => {
+            modalQty++;
+            document.getElementById('itemModalQty').textContent = modalQty;
+            document.getElementById('itemModalPrice').textContent = '$' + (modalDish.price * modalQty).toFixed(2);
+        };
+        document.getElementById('itemModalMinus').onclick = () => {
+            if (modalQty > 1) modalQty--;
+            document.getElementById('itemModalQty').textContent = modalQty;
+            document.getElementById('itemModalPrice').textContent = '$' + (modalDish.price * modalQty).toFixed(2);
+        };
+        document.getElementById('closeItemModal').onclick = () => document.getElementById('itemModal').style.display = 'none';
+        document.getElementById('saveItemModalBtn').onclick = () => {
+            if (modalMode === 'add') store.addToCart(modalDish, modalQty);
+            else store.updateCartQty(modalDish.id, modalQty);
+            document.getElementById('itemModal').style.display = 'none';
+            updateCartView();
+        };
+        document.getElementById('removeItemModalBtn').onclick = () => {
+            store.removeFromCart(modalDish.id);
+            document.getElementById('itemModal').style.display = 'none';
+            updateCartView();
+        };
+
+        // Payment Modal
+        const payModal = document.getElementById('paymentModal');
+        payModal.onclick = (e) => {
+            const btn = e.target.closest('.payment-opt-btn');
+            if (btn) {
+                payModal.querySelectorAll('.payment-opt-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const selectedMethod = btn.getAttribute('data-method');
+                document.getElementById('paymentDetailsArea').style.display = selectedMethod === 'Card' ? 'block' : 'none';
+                payModal.setAttribute('data-selected-method', selectedMethod);
+            }
+        };
+        document.getElementById('closePaymentModal').onclick = () => payModal.style.display = 'none';
+        document.getElementById('completePaymentBtn').onclick = async () => {
+            const method = payModal.getAttribute('data-selected-method') || 'Cash';
+            
+            // Validate Card Details
+            if (method === 'Card') {
+                const cName = document.getElementById('cardNameInput').value.trim();
+                const cNum = document.getElementById('cardNumInput').value.replace(/\s/g, '');
+                const cExp = document.getElementById('cardExpiryInput').value.trim();
+                const cCVV = document.getElementById('cardCVVInput').value.trim();
+
+                if (!cName) return window.showToast("Please enter Card Name", "error");
+                if (!/^\d{16}$/.test(cNum)) return window.showToast("Card Number must be 16 digits", "error");
+                if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(cExp)) return window.showToast("Expiry Date must be MM/YY", "error");
+                if (!/^\d{3,4}$/.test(cCVV)) return window.showToast("CVV must be 3 or 4 digits", "error");
+            }
+
+            const order = await store.placeOrder(store.data.currentOrderType, method, store.data.selectedTableId, store.data.selectedCustomerId);
+            if (order) {
+                payModal.style.display = 'none';
+                document.getElementById('receiptDate').textContent = new Date().toLocaleString();
+                document.getElementById('receiptOrderId').textContent = order.id;
+                document.getElementById('receiptPayment').textContent = method;
+                document.getElementById('receiptOrderType').textContent = store.data.currentOrderType;
+                
+                let targetText = 'N/A';
+                if (store.data.currentOrderType === 'Dine In' && store.data.selectedTableId) {
+                    targetText = 'Table ' + store.data.selectedTableId;
+                } else if (store.data.selectedCustomerId) {
+                    targetText = 'Cust ' + store.data.selectedCustomerId;
+                }
+                document.getElementById('receiptTarget').textContent = targetText;
+
+                document.getElementById('receiptItems').innerHTML = order.items.map(i => `<div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>${i.qty}x ${i.dish.name}</span> <span>$${(i.dish.price * i.qty).toFixed(2)}</span></div>`).join('');
+                
+                const subtotal = order.items.reduce((sum, i) => sum + (i.dish.price * i.qty), 0);
+                const tax = subtotal * 0.1;
+                document.getElementById('receiptSubtotal').textContent = '$' + subtotal.toFixed(2);
+                document.getElementById('receiptTax').textContent = '$' + tax.toFixed(2);
+                document.getElementById('receiptTotal').textContent = '$' + order.total.toFixed(2);
+                document.getElementById('receiptModal').style.display = 'flex';
+            }
+        };
+
+        // Receipt Modal
+        document.getElementById('closeReceiptBtn').onclick = () => {
+            document.getElementById('receiptModal').style.display = 'none';
+            store.data.selectedTableId = null;
+            store.data.selectedCustomerId = null;
+            container.querySelector('#selectTableBtn').innerHTML = `<i class="fa-solid fa-chair"></i> Table`;
+            container.querySelector('#selectCustBtn').innerHTML = `<i class="fa-solid fa-user"></i> Customer`;
+            updateCartView();
+        };
+        document.getElementById('sendToKitchenBtn').onclick = () => {
+            window.showConfirm("Kitchen", "Send order to kitchen?", async () => {
+                const orderId = document.getElementById('receiptOrderId').textContent;
+                await store.fetchAPI('/audit', {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'NOTIFICATION', entity_type: 'ORDER', entity_id: orderId, details: 'Sent order to kitchen' })
+                });
+                window.showToast("Sent to Kitchen successfully!", "success");
+            });
+        };
+        document.getElementById('shareMobileBtn').onclick = () => {
+            window.showConfirm("Mobile", "Send receipt to mobile?", async () => {
+                const orderId = document.getElementById('receiptOrderId').textContent;
+                await store.fetchAPI('/audit', {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'NOTIFICATION', entity_type: 'ORDER', entity_id: orderId, details: 'Sent receipt to mobile' })
+                });
+                window.showToast("Sent to Mobile successfully!", "success");
+            });
+        };
+        document.getElementById('printReceiptBtn').onclick = () => window.print();
+
+        // 4. Initial Render Calls
+        console.log('Order Line Module Initializing...');
+        renderCategories();
+        renderGrid();
+        updateCartView();
+    }
+
+    async function renderTables(container) {
+        if (!document.getElementById('tables-css')) {
+            const link = document.createElement('link');
+            link.id = 'tables-css';
+            link.rel = 'stylesheet';
+            link.href = 'assets/css/tables.css';
+            document.head.appendChild(link);
+        }
+
+        container.innerHTML = `<div style="padding:40px;">Loading tables...</div>`;
+
+        try {
+            const res = await store.fetchAPI('/tables');
+            const tables = await res.json();
+
+            container.innerHTML = `
+                <div class="tables-layout">
+                    <div class="tables-header" style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <h2>Manage Tables</h2>
+                            <div class="tables-legend" style="margin-top:8px;">
+                                <div class="legend-item"><div class="legend-color legend-available"></div> Available</div>
+                                <div class="legend-item"><div class="legend-color legend-occupied"></div> Occupied</div>
+                                <div class="legend-item"><div class="legend-color legend-reserved"></div> Reserved</div>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" id="addTableBtn"><i class="fa-solid fa-plus"></i> Add New Table</button>
+                    </div>
+
+                    <div class="floor-plan" style="position:relative; min-height:500px; background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--border-radius-lg); margin-top:20px; display:flex; flex-wrap:wrap; gap:20px; padding:20px;">
+                        ${tables.map(t => `
+                            <div class="table-obj status-${t.status.toLowerCase()}" style="position:relative; width:120px; height:120px; border-radius:12px; display:flex; flex-direction:column; justify-content:center; align-items:center; cursor:pointer;" data-id="${t.id}" data-name="${t.name}" data-seats="${t.seats}" data-status="${t.status}">
+                                <span class="table-name" style="font-weight:bold; font-size:18px;">${t.name}</span>
+                                <span class="table-seats" style="font-size:12px;">${t.seats} Seats</span>
+                                <div style="position:absolute; bottom:8px; display:flex; gap:4px;">
+                                    <button class="edit-table-btn" data-id="${t.id}" style="background:none; border:none; color:inherit; cursor:pointer; font-size:12px;"><i class="fa-solid fa-pen"></i></button>
+                                    <button class="delete-table-btn" data-id="${t.id}" style="background:none; border:none; color:inherit; cursor:pointer; font-size:12px;"><i class="fa-solid fa-trash"></i></button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Table Modal -->
+                <div id="tableModal" class="modal-overlay" style="display:none;">
+                    <div class="modal-content">
+                        <h3 id="tableModalTitle">Add New Table</h3>
+                        <form id="tableForm">
+                            <input type="hidden" id="tableId">
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Table Name (e.g. T1)</label>
+                                <input type="text" id="tableName" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Number of Seats</label>
+                                <input type="number" id="tableSeats" min="1" required>
+                            </div>
+                            <div class="form-group" id="statusGroup" style="margin-bottom: 12px; display:none;">
+                                <label>Status</label>
+                                <select id="tableStatus" style="width: 100%; padding: 12px; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm);">
+                                    <option value="Available">Available</option>
+                                    <option value="Occupied">Occupied</option>
+                                    <option value="Reserved">Reserved</option>
+                                </select>
+                            </div>
+                            <div class="modal-actions">
+                                <button type="button" class="btn btn-outline" id="closeTableModal">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Save Table</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+
+            const modal = document.getElementById('tableModal');
+            const form = document.getElementById('tableForm');
+
+            document.getElementById('addTableBtn').addEventListener('click', () => {
+                form.reset();
+                document.getElementById('tableId').value = '';
+                document.getElementById('tableModalTitle').textContent = 'Add New Table';
+                document.getElementById('statusGroup').style.display = 'none';
+                modal.style.display = 'flex';
+            });
+
+            container.querySelectorAll('.edit-table-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const parent = e.currentTarget.closest('.table-obj');
+                    document.getElementById('tableId').value = parent.getAttribute('data-id');
+                    document.getElementById('tableName').value = parent.getAttribute('data-name');
+                    document.getElementById('tableSeats').value = parent.getAttribute('data-seats');
+                    document.getElementById('tableStatus').value = parent.getAttribute('data-status');
+                    document.getElementById('tableModalTitle').textContent = 'Edit Table';
+                    document.getElementById('statusGroup').style.display = 'block';
+                    modal.style.display = 'flex';
+                });
+            });
+
+            container.querySelectorAll('.delete-table-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const id = e.currentTarget.getAttribute('data-id');
+                    window.showConfirm("Delete Table", "Are you sure you want to delete this table?", async () => {
+                        await store.fetchAPI(`/tables/${id}`, { method: 'DELETE' });
+                        window.showToast("Table deleted successfully");
+                        await store.init();
+                        renderTables(container);
+                    });
+                });
+            });
+
+            document.getElementById('closeTableModal').addEventListener('click', () => modal.style.display = 'none');
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                window.clearValidations('#tableForm');
+                const id = document.getElementById('tableId').value;
+                const nameEl = document.getElementById('tableName');
+                const seatsEl = document.getElementById('tableSeats');
+                const name = nameEl.value.trim();
+                const seats = parseInt(seatsEl.value);
+                const status = document.getElementById('tableStatus').value || 'Available';
+
+                let hasError = false;
+                if (!name) {
+                    window.markInvalid('tableName');
+                    window.showToast("Table Name is required.", "error");
+                    hasError = true;
+                }
+                if (isNaN(seats) || seats <= 0) {
+                    window.markInvalid('tableSeats');
+                    window.showToast("Seats must be a positive number.", "error");
+                    hasError = true;
+                }
+
+                if (hasError) return;
+
+                const payload = { name, seats, status };
+
+                try {
+                    const res = await store.fetchAPI(id ? `/tables/${id}` : `/tables`, {
+                        method: id ? 'PUT' : 'POST',
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.error);
+                    }
+                    
+                    window.showToast(id ? "Table updated successfully" : "Table added successfully");
+                    modal.style.display = 'none';
+                    await store.init();
+                    renderTables(container);
+                } catch (err) {
+                    window.showToast(err.message, "error");
+                }
+            });
+
+        } catch (err) {
+            container.innerHTML = `<div style="padding:40px; color:red;">Failed to load tables.</div>`;
+        }
+    }
+
+    function renderDishes(container) {
+        if (!document.getElementById('dishes-css')) {
+            const link = document.createElement('link');
+            link.id = 'dishes-css';
+            link.rel = 'stylesheet';
+            link.href = 'assets/css/dishes.css';
+            document.head.appendChild(link);
+        }
+
+        const categories = store.getCategories();
+        let currentCat = 'all';
+
+        const drawView = () => {
+            const dishes = store.getDishes(currentCat);
+            container.innerHTML = `
+                <div class="dishes-layout">
+                    <!-- Sidebar -->
+                    <div class="category-sidebar">
+                        <div class="sidebar-header" style="padding:20px; border-bottom:1px solid var(--border-color);">
+                            <h3>Categories</h3>
+                        </div>
+                        <ul class="category-list" style="list-style:none; padding:10px;">
+                            <li class="category-item ${currentCat === 'all' ? 'active' : ''}" data-id="all" style="padding:10px; cursor:pointer;">All Dishes</li>
+                            ${categories.map(c => `
+                                <li class="category-item ${currentCat === c.id ? 'active' : ''}" data-id="${c.id}" style="padding:10px; cursor:pointer;">
+                                    ${c.name} (${c.count || 0})
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+
+                    <!-- Main Content -->
+                    <div class="dishes-main" style="flex:1; padding:24px;">
+                        <div class="dishes-header" style="display:flex; justify-content:space-between; margin-bottom:24px;">
+                            <div>
+                                <h2>Manage Dishes</h2>
+                                <p style="color:var(--text-muted); font-size:14px; margin-top:4px;">Add, edit, or remove menu items.</p>
+                            </div>
+                            <button class="btn btn-primary" id="addDishBtn"><i class="fa-solid fa-plus"></i> Add New Dish</button>
+                        </div>
+                        
+                        <div class="dishes-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:20px;">
+                            ${dishes.map(d => `
+                                <div class="dish-card" style="background:var(--bg-card); border-radius:var(--border-radius-md); overflow:hidden; border:1px solid var(--border-color);">
+                                    <img src="${d.image}" alt="${d.name}" style="width:100%; height:140px; object-fit:cover;">
+                                    <div class="dish-details" style="padding:16px;">
+                                        <div class="dish-name" style="font-weight:600; margin-bottom:4px;">${d.name}</div>
+                                        <div class="dish-price" style="color:var(--primary); font-weight:700;">$${d.price.toFixed(2)}</div>
+                                        <div style="margin-top:12px; display:flex; gap:8px;">
+                                            <button class="btn btn-outline edit-dish-btn" data-id="${d.id}" data-name="${d.name}" data-price="${d.price}" data-cat="${d.category_id}" data-img="${d.image}" style="flex:1; padding:6px; font-size:12px;">Edit</button>
+                                            <button class="btn btn-outline delete-dish-btn" data-id="${d.id}" style="padding:6px; font-size:12px; border-color:#ef4444; color:#ef4444;"><i class="fa-solid fa-trash"></i></button>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dish Modal -->
+                <div id="dishModal" class="modal-overlay" style="display:none;">
+                    <div class="modal-content">
+                        <h3 id="dishModalTitle">Add New Dish</h3>
+                        <form id="dishForm">
+                            <input type="hidden" id="dishId">
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Dish Name</label>
+                                <input type="text" id="dishName" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Category</label>
+                                <select id="dishCategory" required style="width: 100%; padding: 12px; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm);">
+                                    ${categories.filter(c => c.id !== 'all').map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Price ($)</label>
+                                <input type="number" step="0.01" id="dishPrice" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Image URL</label>
+                                <input type="url" id="dishImage" placeholder="https://images.unsplash.com/..." required>
+                            </div>
+                            <div id="dishPreviewContainer" style="text-align: center; margin-bottom: 16px;">
+                                <img id="dishImgPreview" src="" style="width: 100px; height: 100px; border-radius: 20px; object-fit: cover; display: none; border: 2px solid var(--primary-light);">
+                            </div>
+                            <div class="modal-actions">
+                                <button type="button" class="btn btn-outline" id="closeDishModal">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Save Dish</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+
+            // Category Clicks
+            container.querySelectorAll('.category-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    currentCat = e.currentTarget.getAttribute('data-id');
+                    drawView();
+                });
+            });
+
+            // Modal Logic
+            const modal = document.getElementById('dishModal');
+            const form = document.getElementById('dishForm');
+
+            // Image Preview Logic
+            const imgInput = document.getElementById('dishImage');
+            const imgPreview = document.getElementById('dishImgPreview');
+            imgInput.addEventListener('input', (e) => {
+                if (e.target.value) {
+                    imgPreview.src = e.target.value;
+                    imgPreview.style.display = 'inline-block';
+                } else {
+                    imgPreview.style.display = 'none';
+                }
+            });
+
+            document.getElementById('addDishBtn').addEventListener('click', () => {
+                form.reset();
+                imgPreview.style.display = 'none';
+                document.getElementById('dishId').value = '';
+                document.getElementById('dishModalTitle').textContent = 'Add New Dish';
+                modal.style.display = 'flex';
+            });
+
+            container.querySelectorAll('.edit-dish-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.getElementById('dishId').value = e.target.getAttribute('data-id');
+                    document.getElementById('dishName').value = e.target.getAttribute('data-name');
+                    document.getElementById('dishPrice').value = e.target.getAttribute('data-price');
+                    document.getElementById('dishCategory').value = e.target.getAttribute('data-cat');
+                    document.getElementById('dishImage').value = e.target.getAttribute('data-img');
+                    document.getElementById('dishModalTitle').textContent = 'Edit Dish';
+                    modal.style.display = 'flex';
+                });
+            });
+
+            container.querySelectorAll('.delete-dish-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = e.currentTarget.getAttribute('data-id');
+                    window.showConfirm("Delete Dish", "Are you sure you want to delete this dish?", async () => {
+                        await fetch(`http://localhost:3000/api/dishes/${id}`, { method: 'DELETE' });
+                        window.showToast("Dish deleted successfully");
+                        await store.init();
+                        drawView();
+                    });
+                });
+            });
+
+            document.getElementById('closeDishModal').addEventListener('click', () => modal.style.display = 'none');
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                window.clearValidations('#dishForm');
+                const id = document.getElementById('dishId').value;
+                const nameEl = document.getElementById('dishName');
+                const priceEl = document.getElementById('dishPrice');
+                const imageEl = document.getElementById('dishImage');
+                
+                const name = nameEl.value.trim();
+                const price = parseFloat(priceEl.value);
+                const image = imageEl.value.trim();
+                const category_id = document.getElementById('dishCategory').value;
+
+                let hasError = false;
+                if (!name) {
+                    window.markInvalid('dishName');
+                    window.showToast("Dish Name is required.", "error");
+                    hasError = true;
+                }
+                if (isNaN(price) || price <= 0) {
+                    window.markInvalid('dishPrice');
+                    window.showToast("Price must be greater than zero.", "error");
+                    hasError = true;
+                }
+                if (!image) {
+                    window.markInvalid('dishImage');
+                    window.showToast("Image URL is required.", "error");
+                    hasError = true;
+                }
+
+                if (hasError) return;
+
+                const payload = { name, category_id, price, image };
+
+                try {
+                    const url = id ? `http://localhost:3000/api/dishes/${id}` : `http://localhost:3000/api/dishes`;
+                    const method = id ? 'PUT' : 'POST';
+                    const res = await fetch(url, {
+                        method: method,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.error);
+                    }
+
+                    window.showToast(id ? "Dish updated successfully" : "Dish added successfully");
+                    modal.style.display = 'none';
+                    await store.init(); // Reload data
+                    drawView();
+                } catch (err) {
+                    window.showToast(err.message, "error");
+                }
+            });
+        };
+
+        drawView();
+    }
+
+    async function renderCustomers(container) {
+        if (!document.getElementById('customers-css')) {
+            const link = document.createElement('link');
+            link.id = 'customers-css';
+            link.rel = 'stylesheet';
+            link.href = 'assets/css/customers.css';
+            document.head.appendChild(link);
+        }
+
+        container.innerHTML = `<div style="padding: 40px;">Loading customers...</div>`;
+
+        try {
+            const res = await store.fetchAPI('/customers');
+            const customers = await res.json();
+
+            container.innerHTML = `
+                <div class="customers-layout">
+                    <div class="customers-header">
+                        <h2>Customer Management</h2>
+                        <button class="btn btn-primary" id="addCustomerBtn"><i class="fa-solid fa-plus"></i> Add New Customer</button>
+                    </div>
+                    
+                    <div class="customers-panel">
+                        <table class="customers-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Phone</th>
+                                    <th>Email</th>
+                                    <th>Loyalty Points</th>
+                                    <th>Total Spent</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${customers.map(c => `
+                                    <tr>
+                                        <td>#CUST-${c.id}</td>
+                                        <td><strong>${c.name}</strong></td>
+                                        <td>${c.phone}</td>
+                                        <td>${c.email || 'N/A'}</td>
+                                        <td><span class="loyalty-badge">${c.loyalty_points} pts</span></td>
+                                        <td><span class="spent-badge">$${c.total_spent.toFixed(2)}</span></td>
+                                        <td>
+                                            <button class="btn btn-outline edit-cust-btn" data-id="${c.id}" data-name="${c.name}" data-phone="${c.phone}" data-email="${c.email || ''}" data-points="${c.loyalty_points}" data-spent="${c.total_spent}" style="padding: 6px 12px; font-size: 12px; margin-right: 8px;">Edit</button>
+                                            <button class="btn btn-outline delete-cust-btn" data-id="${c.id}" style="padding: 6px 12px; font-size: 12px; border-color: #ef4444; color: #ef4444;">Delete</button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                                ${customers.length === 0 ? '<tr><td colspan="7" style="text-align:center; padding: 40px;">No customers found.</td></tr>' : ''}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Customer Modal -->
+                <div id="custModal" class="modal-overlay" style="display:none;">
+                    <div class="modal-content">
+                        <h3 id="custModalTitle">Add New Customer</h3>
+                        <form id="custForm">
+                            <input type="hidden" id="custId">
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Full Name</label>
+                                <input type="text" id="custName" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Phone Number</label>
+                                <input type="text" id="custPhone" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Email Address</label>
+                                <input type="email" id="custEmail">
+                            </div>
+                            <div id="editFields" style="display:none;">
+                                <div style="display:flex; gap:12px; margin-bottom:12px;">
+                                    <div class="form-group" style="flex:1;">
+                                        <label>Loyalty Points</label>
+                                        <input type="number" id="custPoints">
+                                    </div>
+                                    <div class="form-group" style="flex:1;">
+                                        <label>Total Spent ($)</label>
+                                        <input type="number" step="0.01" id="custSpent">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-actions">
+                                <button type="button" class="btn btn-outline" id="closeCustModal">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Save Customer</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+
+            const modal = document.getElementById('custModal');
+            const form = document.getElementById('custForm');
+            const editFields = document.getElementById('editFields');
+
+            // Add Customer
+            document.getElementById('addCustomerBtn').addEventListener('click', () => {
+                form.reset();
+                document.getElementById('custId').value = '';
+                editFields.style.display = 'none';
+                document.getElementById('custModalTitle').textContent = 'Add New Customer';
+                modal.style.display = 'flex';
+            });
+
+            // Edit Customer
+            container.querySelectorAll('.edit-cust-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = e.target.getAttribute('data-id');
+                    const name = e.target.getAttribute('data-name');
+                    const phone = e.target.getAttribute('data-phone');
+                    const email = e.target.getAttribute('data-email');
+                    const points = e.target.getAttribute('data-points');
+                    const spent = e.target.getAttribute('data-spent');
+                    
+                    document.getElementById('custId').value = id;
+                    document.getElementById('custName').value = name;
+                    document.getElementById('custPhone').value = phone;
+                    document.getElementById('custEmail').value = email;
+                    document.getElementById('custPoints').value = points;
+                    document.getElementById('custSpent').value = spent;
+                    
+                    editFields.style.display = 'block';
+                    document.getElementById('custModalTitle').textContent = 'Edit Customer';
+                    modal.style.display = 'flex';
+                });
+            });
+
+            // Delete Customer
+            container.querySelectorAll('.delete-cust-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = e.target.getAttribute('data-id');
+                    const name = e.target.getAttribute('data-name');
+                    window.showConfirm("Delete Customer", `Are you sure you want to delete ${name}? This action cannot be undone.`, async () => {
+                        await store.fetchAPI(`/customers/${id}`, { method: 'DELETE' });
+                        window.showToast("Customer deleted successfully");
+                        await store.init();
+                        renderCustomers(container); 
+                    }, 'danger');
+                });
+            });
+
+            // Close Modal
+            document.getElementById('closeCustModal').addEventListener('click', () => modal.style.display = 'none');
+
+            // Submit Form
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                window.clearValidations('#custForm');
+                const id = document.getElementById('custId').value;
+                const name = document.getElementById('custName').value.trim();
+                const phone = document.getElementById('custPhone').value.trim();
+                const email = document.getElementById('custEmail').value.trim();
+                
+                let hasError = false;
+                if (!name) {
+                    window.markInvalid('custName');
+                    window.showToast("Name is required.", "error");
+                    hasError = true;
+                }
+                if (!phone) {
+                    window.markInvalid('custPhone');
+                    window.showToast("Phone is required.", "error");
+                    hasError = true;
+                }
+
+                if (hasError) return;
+
+                const payload = { name, phone, email };
+                if (id) {
+                    payload.loyalty_points = parseInt(document.getElementById('custPoints').value) || 0;
+                    payload.total_spent = parseFloat(document.getElementById('custSpent').value) || 0;
+                }
+
+                try {
+                    const method = id ? 'PUT' : 'POST';
+                    const res = await store.fetchAPI(id ? `/customers/${id}` : `/customers`, {
+                        method: method,
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.error);
+                    }
+                    
+                    window.showToast(id ? "Customer updated successfully" : "Customer added successfully");
+                    modal.style.display = 'none';
+                    await store.init();
+                    renderCustomers(container);
+                } catch (err) {
+                    window.showToast(err.message, "error");
+                }
+            });
+
+        } catch (e) {
+            container.innerHTML = `<div style="padding: 40px; color: red;">Failed to load customers.</div>`;
+        }
+    }
+
+    async function renderUsers(container) {
+        if (!document.getElementById('users-css')) {
+            const link = document.createElement('link');
+            link.id = 'users-css';
+            link.rel = 'stylesheet';
+            link.href = 'assets/css/users.css';
+            document.head.appendChild(link);
+        }
+
+        container.innerHTML = `<div style="padding: 40px;">Loading users...</div>`;
+
+        try {
+            const res = await store.fetchAPI('/users');
+            const users = await res.json();
+
+            container.innerHTML = `
+                <div class="users-layout">
+                    <div class="users-header">
+                        <h2>Staff & Users Management</h2>
+                        <button class="btn btn-primary" id="addUserBtn"><i class="fa-solid fa-plus"></i> Add New User</button>
+                    </div>
+                    
+                    <div class="users-panel">
+                        <table class="users-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Username</th>
+                                    <th>Role</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${users.map(u => `
+                                    <tr>
+                                        <td>${u.id}</td>
+                                        <td><strong>${u.name}</strong></td>
+                                        <td>${u.username}</td>
+                                        <td><span class="type-badge">${u.role.toUpperCase()}</span></td>
+                                        <td>
+                                            <button class="btn btn-outline edit-user-btn" data-id="${u.id}" data-name="${u.name}" data-role="${u.role}" style="padding: 6px 12px; font-size: 12px; margin-right: 8px;">Edit</button>
+                                            <button class="btn btn-outline delete-user-btn" data-id="${u.id}" style="padding: 6px 12px; font-size: 12px; border-color: #ef4444; color: #ef4444;">Delete</button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- User Modal -->
+                <div id="userModal" class="modal-overlay" style="display:none;">
+                    <div class="modal-content">
+                        <h3 id="userModalTitle">Add New User</h3>
+                        <form id="userForm">
+                            <input type="hidden" id="userId">
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Full Name</label>
+                                <input type="text" id="userName" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Username</label>
+                                <input type="text" id="userUsername" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Password (Leave blank to keep current if editing)</label>
+                                <input type="password" id="userPassword">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Role</label>
+                                <select id="userRole" style="width: 100%; padding: 12px; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm);">
+                                    <option value="admin">Admin</option>
+                                    <option value="cashier">Cashier</option>
+                                    <option value="kitchen">Kitchen</option>
+                                </select>
+                            </div>
+                            <div class="modal-actions">
+                                <button type="button" class="btn btn-outline" id="closeUserModal">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Save User</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+
+            const modal = document.getElementById('userModal');
+            const form = document.getElementById('userForm');
+
+            // Add User
+            document.getElementById('addUserBtn').addEventListener('click', () => {
+                form.reset();
+                document.getElementById('userId').value = '';
+                document.getElementById('userUsername').disabled = false;
+                document.getElementById('userPassword').required = true;
+                document.getElementById('userModalTitle').textContent = 'Add New User';
+                modal.style.display = 'flex';
+            });
+
+            // Edit User
+            container.querySelectorAll('.edit-user-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = e.target.getAttribute('data-id');
+                    const name = e.target.getAttribute('data-name');
+                    const role = e.target.getAttribute('data-role');
+                    
+                    document.getElementById('userId').value = id;
+                    document.getElementById('userName').value = name;
+                    document.getElementById('userUsername').value = 'Cannot edit username';
+                    document.getElementById('userUsername').disabled = true;
+                    document.getElementById('userRole').value = role;
+                    document.getElementById('userPassword').required = false;
+                    
+                    document.getElementById('userModalTitle').textContent = 'Edit User';
+                    modal.style.display = 'flex';
+                });
+            });
+
+            // Delete User
+            container.querySelectorAll('.delete-user-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = e.target.getAttribute('data-id');
+                    const name = e.target.getAttribute('data-name');
+                    window.showConfirm("Delete User", `Are you sure you want to delete ${name}?`, async () => {
+                        await fetch(`http://localhost:3000/api/users/${id}`, { method: 'DELETE' });
+                        window.showToast("User deleted successfully");
+                        renderUsers(container);
+                    }, 'danger');
+                });
+            });
+
+            // Close Modal
+            document.getElementById('closeUserModal').addEventListener('click', () => modal.style.display = 'none');
+
+            // Submit Form
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                window.clearValidations('#userForm');
+                const id = document.getElementById('userId').value;
+                const nameEl = document.getElementById('userName');
+                const usernameEl = document.getElementById('userUsername');
+                const passwordEl = document.getElementById('userPassword');
+                
+                const name = nameEl.value.trim();
+                const username = usernameEl.value.trim();
+                const password = passwordEl.value;
+                const role = document.getElementById('userRole').value;
+
+                let hasError = false;
+                if (!name) {
+                    window.markInvalid('userName');
+                    window.showToast("Name is required.", "error");
+                    hasError = true;
+                }
+                if (!id && username.length < 3) {
+                    window.markInvalid('userUsername');
+                    window.showToast("Username must be at least 3 characters.", "error");
+                    hasError = true;
+                }
+                if (!id && password.length < 6) {
+                    window.markInvalid('userPassword');
+                    window.showToast("Password must be at least 6 characters.", "error");
+                    hasError = true;
+                }
+                if (id && password && password.length < 6) {
+                    window.markInvalid('userPassword');
+                    window.showToast("New password must be at least 6 characters.", "error");
+                    hasError = true;
+                }
+
+                if (hasError) return;
+
+                const payload = { name, role, password };
+
+                try {
+                    const url = id ? `http://localhost:3000/api/users/${id}` : `http://localhost:3000/api/users`;
+                    const method = id ? 'PUT' : 'POST';
+                    if (!id) payload.username = username;
+
+                    const res = await store.fetchAPI(id ? `/users/${id}` : `/users`, {
+                        method: method,
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.error);
+                    }
+                    
+                    window.showToast(id ? "User updated successfully" : "User added successfully");
+                    modal.style.display = 'none';
+                    await store.init();
+                    renderUsers(container);
+                } catch (err) {
+                    window.showToast(err.message, "error");
+                }
+            });
+
+        } catch (e) {
+            container.innerHTML = `<div style="padding: 40px; color: red;">Failed to load users. Is the server running?</div>`;
+        }
+    }
+
+    let kitchenTimerInterval = null;
+
+    function renderKitchen(container) {
+        if (!document.getElementById('kitchen-css')) {
+            const link = document.createElement('link');
+            link.id = 'kitchen-css';
+            link.rel = 'stylesheet';
+            link.href = 'assets/css/kitchen.css';
+            document.head.appendChild(link);
+        }
+
+        if (kitchenTimerInterval) clearInterval(kitchenTimerInterval);
+
+        const pendingOrders = store.data.orders.filter(o => o.status === 'Preparing' || o.status === 'Ready');
+        
+        // Calculate Prep Summary
+        const prepMap = {};
+        pendingOrders.forEach(ord => {
+            if (ord.status === 'Preparing') {
+                ord.items.forEach(item => {
+                    prepMap[item.dish.name] = (prepMap[item.dish.name] || 0) + item.qty;
+                });
+            }
+        });
+
+        container.innerHTML = `
+            <div class="kitchen-layout">
+                <div class="kitchen-main">
+                    <div class="kitchen-header">
+                        <h2>Kitchen Display System (KDS)</h2>
+                        <div style="font-weight: 600; color: #10b981; display:flex; align-items:center; gap:8px;">
+                            <span class="status-pulse" style="width:10px; height:10px; background:#10b981; border-radius:50%;"></span> 
+                            Live Sync Active
+                        </div>
+                    </div>
+                    
+                    <div class="tickets-container">
+                        ${pendingOrders.length === 0 ? '<div style="background:rgba(255,255,255,0.5); padding:40px; border-radius:24px; text-align:center; width:100%;">No active orders in kitchen.</div>' : ''}
+                        
+                        ${pendingOrders.map(ord => {
+                            const table = store.data.tables.find(t => t.id == ord.table_id);
+                            return `
+                                <div class="ticket-card" data-id="${ord.id}" data-date="${ord.date}">
+                                    <div class="ticket-header urgency-normal" id="header-${ord.id}">
+                                        <span class="ticket-id">${ord.id}</span>
+                                        <span class="ticket-timer" id="timer-${ord.id}">00:00</span>
+                                    </div>
+                                    <div class="ticket-context">
+                                        <i class="fa-solid ${ord.order_type === 'Takeaway' ? 'fa-bag-shopping' : 'fa-chair'}"></i>
+                                        <span>${ord.order_type || 'Dine In'}</span>
+                                        ${table ? `<span style="background:var(--primary-light); color:var(--primary); padding:2px 8px; border-radius:4px; font-size:11px;">${table.name}</span>` : ''}
+                                    </div>
+                                    <div class="ticket-items">
+                                        ${ord.items.map(item => `
+                                            <div class="ticket-item">
+                                                <div class="t-item-qty">${item.qty}x</div>
+                                                <div style="font-weight:600;">${item.dish.name}</div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                    <div class="ticket-actions">
+                                        ${ord.status === 'Preparing' 
+                                            ? `<button class="btn btn-primary btn-kitchen mark-ready-btn" data-id="${ord.id}">Mark as Ready</button>` 
+                                            : `<button class="btn btn-outline btn-kitchen mark-completed-btn" data-id="${ord.id}" style="border-color:#10b981; color:#10b981;">Serve (Completed)</button>`
+                                        }
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+
+                <div class="prep-sidebar">
+                    <h3><i class="fa-solid fa-fire-burner" style="color:var(--primary);"></i> Batch Prep Summary</h3>
+                    <ul class="prep-list">
+                        ${Object.entries(prepMap).length > 0 ? Object.entries(prepMap).map(([name, qty]) => `
+                            <li class="prep-item">
+                                <span>${name}</span>
+                                <span class="prep-qty">${qty}</span>
+                            </li>
+                        `).join('') : '<p style="color:var(--text-muted); font-size:14px;">Nothing to prep yet.</p>'}
+                    </ul>
+                    <div style="margin-top:auto; padding-top:20px; font-size:12px; color:var(--text-muted); border-top:1px solid var(--border-color);">
+                        Total items to cook: ${Object.values(prepMap).reduce((a, b) => a + b, 0)}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Update Timers Logic
+        const updateTimers = () => {
+            const now = new Date();
+            container.querySelectorAll('.ticket-card').forEach(card => {
+                const orderId = card.getAttribute('data-id');
+                const orderDate = new Date(card.getAttribute('data-date'));
+                const diffMs = now - orderDate;
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffSecs = Math.floor((diffMs % 60000) / 1000);
+                
+                const timerEl = document.getElementById(`timer-${orderId}`);
+                const headerEl = document.getElementById(`header-${orderId}`);
+                
+                if (timerEl) {
+                    timerEl.textContent = `${diffMins.toString().padStart(2, '0')}:${diffSecs.toString().padStart(2, '0')}`;
+                }
+
+                // Urgency Color Logic
+                if (headerEl) {
+                    headerEl.classList.remove('urgency-normal', 'urgency-warning', 'urgency-urgent');
+                    if (diffMins >= 20) {
+                        headerEl.classList.add('urgency-urgent');
+                    } else if (diffMins >= 10) {
+                        headerEl.classList.add('urgency-warning');
+                    } else {
+                        headerEl.classList.add('urgency-normal');
+                    }
+                }
+            });
+        };
+
+        updateTimers();
+        kitchenTimerInterval = setInterval(updateTimers, 1000);
+
+        // Bind Buttons
+        container.querySelectorAll('.mark-ready-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const id = e.target.getAttribute('data-id');
+                await fetch(`http://localhost:3000/api/orders/${id}/status`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({status: 'Ready'})
+                });
+                // Note: The socket 'order_updated' listener will trigger re-render
+            });
+        });
+
+        container.querySelectorAll('.mark-completed-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const id = e.target.getAttribute('data-id');
+                await fetch(`http://localhost:3000/api/orders/${id}/status`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({status: 'Completed'})
+                });
+            });
+        });
+    }
+
+    async function renderSettings(container) {
+        container.innerHTML = `<div style="padding:40px;">Loading settings...</div>`;
+        
+        try {
+            const [invRes, setRes] = await Promise.all([
+                fetch('http://localhost:3000/api/inventory'),
+                fetch('http://localhost:3000/api/settings')
+            ]);
+            
+            const inventory = await invRes.json();
+            const settings = await setRes.json();
+            
+            container.innerHTML = `
+                <div class="dashboard-layout">
+                    <div class="dash-header">
+                        <h2>Settings & Configuration</h2>
+                    </div>
+
+                    <!-- Global System Settings -->
+                    <div class="dash-panel" style="margin-bottom:24px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h3 style="margin: 0; font-size: 20px;">System Configuration</h3>
+                            <p style="color: var(--text-muted); font-size: 14px; margin-top: 4px;">Update restaurant name, currency, and tax rates.</p>
+                        </div>
+                        <button class="btn btn-primary" id="editGlobalBtn"><i class="fa-solid fa-gear"></i> Edit Settings</button>
+                    </div>
+
+                    <!-- Global Settings Modal -->
+                    <div id="settingsModal" class="modal-overlay" style="display:none;">
+                        <div class="modal-content">
+                            <h3>Edit Global Settings</h3>
+                            <form id="globalSettingsForm">
+                                <div class="form-group">
+                                    <label>Restaurant Name</label>
+                                    <input type="text" id="setRestName" value="${settings.restaurant_name || ''}">
+                                </div>
+                                <div class="form-group">
+                                    <label>Currency Symbol</label>
+                                    <input type="text" id="setCurrency" value="${settings.currency_symbol || '$'}">
+                                </div>
+                                <div class="form-group">
+                                    <label>Tax Percentage (%)</label>
+                                    <input type="number" step="0.1" id="setTax" value="${settings.tax_percentage || '0'}">
+                                </div>
+                                <div class="modal-actions">
+                                    <button type="button" class="btn btn-outline" id="closeSettingsModal">Cancel</button>
+                                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    <!-- Inventory Management -->
+                    <div class="dash-panel">
+                        <div class="panel-header">
+                            <h3>Raw Materials Inventory</h3>
+                            <button class="btn btn-primary" id="addInvBtn"><i class="fa-solid fa-plus"></i> Add Material</button>
+                        </div>
+                        
+                        <table class="orders-table">
+                            <thead>
+                                <tr>
+                                    <th>Item ID</th>
+                                    <th>Name</th>
+                                    <th>Stock Quantity</th>
+                                    <th>Status</th>
+                                    <th>Expiry Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${inventory.length > 0 ? inventory.map(item => `
+                                    <tr>
+                                        <td>#INV-${item.id}</td>
+                                        <td><strong>${item.name}</strong></td>
+                                        <td>${item.stock_qty} ${item.unit}</td>
+                                        <td>
+                                            ${item.stock_qty <= item.low_stock_threshold 
+                                                ? '<span class="status-badge status-Occupied" style="background:#fee2e2; color:#ef4444;">Low Stock</span>' 
+                                                : '<span class="status-badge status-Completed" style="background:#d1fae5; color:#065f46;">Healthy</span>'}
+                                        </td>
+                                        <td>${item.expiry_date || 'N/A'}</td>
+                                        <td>
+                                            <button class="btn btn-outline edit-inv-btn" data-id="${item.id}" data-name="${item.name}" data-qty="${item.stock_qty}" data-unit="${item.unit}" data-thresh="${item.low_stock_threshold}" data-exp="${item.expiry_date || ''}" style="padding:4px 8px; font-size:12px;">Edit</button>
+                                            <button class="btn btn-outline delete-inv-btn" data-id="${item.id}" style="padding:4px 8px; font-size:12px; border-color:#ef4444; color:#ef4444;">Delete</button>
+                                        </td>
+                                    </tr>
+                                `).join('') : '<tr><td colspan="6">No inventory data</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Inventory Modal -->
+                <div id="invModal" class="modal-overlay" style="display:none;">
+                    <div class="modal-content">
+                        <h3 id="invModalTitle">Add New Material</h3>
+                        <form id="invForm">
+                            <input type="hidden" id="invId">
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Material Name</label>
+                                <input type="text" id="invName" required>
+                            </div>
+                            <div style="display:flex; gap:12px; margin-bottom:12px;">
+                                <div class="form-group" style="flex:1;">
+                                    <label>Stock Qty</label>
+                                    <input type="number" id="invQty" step="0.1" required>
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label>Unit (e.g. pcs, kg, ml)</label>
+                                    <input type="text" id="invUnit" required>
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Low Stock Alert Threshold</label>
+                                <input type="number" id="invThresh" step="0.1" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label>Expiry Date</label>
+                                <input type="date" id="invExp">
+                            </div>
+                            <div class="modal-actions">
+                                <button type="button" class="btn btn-outline" id="closeInvModal">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Save Material</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+
+            // Global Settings Logic
+            const setModal = document.getElementById('settingsModal');
+            document.getElementById('editGlobalBtn').addEventListener('click', () => setModal.style.display = 'flex');
+            document.getElementById('closeSettingsModal').addEventListener('click', () => setModal.style.display = 'none');
+
+            document.getElementById('globalSettingsForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const payload = {
+                    restaurant_name: document.getElementById('setRestName').value,
+                    currency_symbol: document.getElementById('setCurrency').value,
+                    tax_percentage: document.getElementById('setTax').value
+                };
+                await fetch('http://localhost:3000/api/settings', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                window.showToast('Global settings saved successfully');
+                setModal.style.display = 'none';
+                renderSettings(container);
+            });
+
+            // Inventory Logic
+            const modal = document.getElementById('invModal');
+            const form = document.getElementById('invForm');
+
+            document.getElementById('addInvBtn').addEventListener('click', () => {
+                form.reset();
+                document.getElementById('invId').value = '';
+                document.getElementById('invModalTitle').textContent = 'Add New Material';
+                modal.style.display = 'flex';
+            });
+
+            container.querySelectorAll('.edit-inv-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.getElementById('invId').value = e.target.getAttribute('data-id');
+                    document.getElementById('invName').value = e.target.getAttribute('data-name');
+                    document.getElementById('invQty').value = e.target.getAttribute('data-qty');
+                    document.getElementById('invUnit').value = e.target.getAttribute('data-unit');
+                    document.getElementById('invThresh').value = e.target.getAttribute('data-thresh');
+                    document.getElementById('invExp').value = e.target.getAttribute('data-exp');
+                    document.getElementById('invModalTitle').textContent = 'Edit Material';
+                    modal.style.display = 'flex';
+                });
+            });
+
+            container.querySelectorAll('.delete-inv-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const id = e.target.getAttribute('data-id');
+                    window.showConfirm("Delete Material", "Are you sure you want to delete this material?", async () => {
+                        await fetch(`http://localhost:3000/api/inventory/${id}`, { method: 'DELETE' });
+                        window.showToast("Material deleted successfully");
+                        renderSettings(container);
+                    }, 'danger');
+                });
+            });
+
+            document.getElementById('closeInvModal').addEventListener('click', () => modal.style.display = 'none');
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                window.clearValidations('#invForm');
+                const id = document.getElementById('invId').value;
+                const nameEl = document.getElementById('invName');
+                const qtyEl = document.getElementById('invQty');
+                const unitEl = document.getElementById('invUnit');
+                const threshEl = document.getElementById('invThresh');
+                
+                const name = nameEl.value.trim();
+                const stock_qty = parseFloat(qtyEl.value);
+                const unit = unitEl.value.trim();
+                const low_stock_threshold = parseFloat(threshEl.value);
+                const expiry_date = document.getElementById('invExp').value;
+
+                let hasError = false;
+                if (!name) {
+                    window.markInvalid('invName');
+                    window.showToast("Material Name is required.", "error");
+                    hasError = true;
+                }
+                if (isNaN(stock_qty) || stock_qty < 0) {
+                    window.markInvalid('invQty');
+                    window.showToast("Stock quantity cannot be negative.", "error");
+                    hasError = true;
+                }
+                if (!unit) {
+                    window.markInvalid('invUnit');
+                    window.showToast("Unit is required.", "error");
+                    hasError = true;
+                }
+                if (isNaN(low_stock_threshold) || low_stock_threshold < 0) {
+                    window.markInvalid('invThresh');
+                    window.showToast("Threshold cannot be negative.", "error");
+                    hasError = true;
+                }
+
+                if (hasError) return;
+
+                const payload = { name, stock_qty, unit, low_stock_threshold, expiry_date };
+
+                try {
+                    const url = id ? `http://localhost:3000/api/inventory/${id}` : `http://localhost:3000/api/inventory`;
+                    const method = id ? 'PUT' : 'POST';
+                    const res = await fetch(url, {
+                        method: method,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.error);
+                    }
+
+                    window.showToast(id ? "Material updated successfully" : "Material added successfully");
+                    modal.style.display = 'none';
+                    renderSettings(container);
+                } catch (err) {
+                    window.showToast(err.message, "error");
+                }
+            });
+
+        } catch (e) {
+            container.innerHTML = `<div style="padding:40px; color:red;">Failed to load inventory.</div>`;
+        }
+    }
+
+    function renderHistory(container) {
+        if (!document.getElementById('history-css')) {
+            const link = document.createElement('link');
+            link.id = 'history-css';
+            link.rel = 'stylesheet';
+            link.href = 'assets/css/order-history.css';
+            document.head.appendChild(link);
+        }
+
+        const orders = store.data.orders;
+
+        container.innerHTML = `
+            <div class="history-layout">
+                <div class="history-header">
+                    <h2>Order History</h2>
+                    <button class="btn btn-outline" id="exportCsvBtn"><i class="fa-solid fa-file-export"></i> Export CSV</button>
+                </div>
+                
+                <div class="history-panel">
+                    <div class="history-table-wrapper">
+                        <table class="history-table">
+                            <thead>
+                                    <tr>
+                                        <th>Order ID</th>
+                                        <th>Date & Time</th>
+                                        <th>Order Type</th>
+                                        <th>Payment Method</th>
+                                        <th>Items</th>
+                                        <th>Total Amount</th>
+                                        <th>Status</th>
+                                        ${store.data.currentUser.role === 'admin' ? '<th>Actions</th>' : ''}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${orders.length > 0 ? orders.map(ord => `
+                                        <tr>
+                                            <td><strong>${ord.id}</strong></td>
+                                            <td>${new Date(ord.date).toLocaleDateString()} <br> <span style="color:var(--text-muted); font-size:12px;">${new Date(ord.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></td>
+                                            <td><span class="type-badge">${ord.order_type || 'Dine In'}</span></td>
+                                            <td><span class="method-badge">${ord.payment_method || 'Cash'}</span></td>
+                                            <td>
+                                                ${ord.items.length} items
+                                                <div class="history-items-list">
+                                                    ${ord.items.map(i => `${i.qty}x ${i.dish.name}`).join(', ')}
+                                                </div>
+                                            </td>
+                                            <td><strong>$${ord.total.toFixed(2)}</strong></td>
+                                            <td><span class="status-badge status-${ord.status.toLowerCase()}">${ord.status}</span></td>
+                                            ${store.data.currentUser.role === 'admin' ? `
+                                                <td>
+                                                    ${ord.status !== 'Cancelled' ? `
+                                                        <button class="btn btn-outline cancel-order-btn" data-id="${ord.id}" style="padding:6px 12px; font-size:11px; border-color:#ef4444; color:#ef4444;">
+                                                            <i class="fa-solid fa-ban"></i> Cancel/Refund
+                                                        </button>
+                                                    ` : '<span style="color:var(--text-muted); font-size:11px;">Already Cancelled</span>'}
+                                                </td>
+                                            ` : ''}
+                                        </tr>
+                                    `).join('') : '<tr><td colspan="8" style="text-align:center;">No orders found.</td></tr>'}
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('exportCsvBtn').addEventListener('click', () => {
+            const headers = ['Order ID', 'Date', 'Type', 'Payment', 'Total', 'Status'];
+            const rows = orders.map(o => [
+                o.id,
+                new Date(o.date).toLocaleString().replace(',', ''),
+                o.order_type,
+                o.payment_method || 'Cash',
+                o.total.toFixed(2),
+                o.status
+            ]);
+
+            let csvContent = "data:text/csv;charset=utf-8," 
+                + headers.join(",") + "\n"
+                + rows.map(e => e.join(",")).join("\n");
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `orders_history_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+        // Cancel Button Listeners
+        container.querySelectorAll('.cancel-order-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const id = e.currentTarget.getAttribute('data-id');
+                const order = store.data.orders.find(o => o.id === id);
+                const customer = order && order.customer_id ? store.data.customers.find(c => c.id == order.customer_id) : null;
+                const customerInfo = customer ? `<br><span style="font-weight:700; color:#ef4444;">Customer: ${customer.name} (${customer.phone})</span>` : "";
+                
+                window.showConfirm("Cancel Order", `Are you sure you want to CANCEL and REFUND order ${id}?${customerInfo}<br><br>This will restore stock and refund loyalty points.`, async (reason) => {
+                    try {
+                        const res = await store.fetchAPI(`/orders/${id}/cancel`, { 
+                            method: 'POST',
+                            body: JSON.stringify({ reason })
+                        });
+                        if (res.ok) {
+                            window.showToast("Order cancelled successfully.");
+                            await store.refreshData();
+                            renderHistory(container);
+                        } else {
+                            const err = await res.json();
+                            window.showToast(err.error || "Failed to cancel order", "error");
+                        }
+                    } catch (err) {
+                        window.showToast("Failed to connect to server.", "error");
+                    }
+                }, 'danger', true, "Enter cancellation reason (e.g. Customer changed mind)");
+            });
+        });
+    }
+
+    function renderHelp(container) {
+        container.innerHTML = `<h2>Help Center</h2>`;
+    }
+});
