@@ -1,170 +1,92 @@
+/* Dashboard Layout */
 .dashboard-layout {
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 32px;
     height: 100%;
     overflow-y: auto;
-    padding-right: 8px;
+    padding-right: 12px;
+    animation: fadeIn 0.5s ease-out;
 }
 
 .dashboard-layout::-webkit-scrollbar {
     width: 6px;
 }
 .dashboard-layout::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
 }
 
 .dash-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-}
-
-.dash-header h2 {
-    font-size: 24px;
-    font-weight: 600;
-}
-
-.dash-date {
-    color: var(--text-muted);
-    font-size: 14px;
+    align-items: flex-end;
 }
 
 /* Stats Cards */
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 20px;
+    gap: 24px;
 }
 
 .stat-card {
-    background-color: var(--bg-card);
-    border-radius: var(--border-radius-md);
-    padding: 24px;
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    border-radius: 24px;
+    padding: 28px;
     display: flex;
     align-items: center;
-    gap: 20px;
-    box-shadow: var(--shadow-sm);
-    border: 1px solid var(--border-color);
-    transition: var(--transition-fast);
+    gap: 24px;
+    border: 1px solid var(--glass-border);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .stat-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
+    transform: translateY(-5px);
+    border-color: var(--primary);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
 }
 
 .stat-icon {
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background-color: var(--primary-light);
-    color: var(--primary);
+    width: 64px;
+    height: 64px;
+    border-radius: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 24px;
-}
-
-.stat-info h4 {
-    font-size: 14px;
-    color: var(--text-muted);
-    font-weight: 500;
-    margin-bottom: 8px;
+    flex-shrink: 0;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
 }
 
 .stat-info .stat-value {
-    font-size: 24px;
-    font-weight: 700;
+    font-weight: 800;
     color: var(--text-main);
+    letter-spacing: -1px;
 }
 
-/* Recent Orders & Chart Area */
-.dash-bottom {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 24px;
+.stat-trend.positive { color: #10b981; }
+.stat-trend.negative { color: #ef4444; }
+
+/* Custom Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
-.dash-panel {
-    background-color: var(--bg-card);
-    border-radius: var(--border-radius-md);
-    padding: 24px;
-    box-shadow: var(--shadow-sm);
-    border: 1px solid var(--border-color);
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.5); opacity: 0.5; }
+    100% { transform: scale(1); opacity: 1; }
 }
 
-.panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
+.card {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    transition: var(--transition-normal);
 }
 
-.panel-header h3 {
-    font-size: 18px;
-    font-weight: 600;
-}
-
-/* Orders Table */
-.orders-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.orders-table th {
-    text-align: left;
-    padding: 12px;
-    border-bottom: 1px solid var(--border-color);
-    color: var(--text-muted);
-    font-weight: 500;
-    font-size: 14px;
-}
-
-.orders-table td {
-    padding: 16px 12px;
-    border-bottom: 1px solid var(--border-color);
-    font-size: 14px;
-}
-
-.status-badge {
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.status-Pending { background-color: rgba(234, 179, 8, 0.15); color: #eab308; }
-.status-Completed { background-color: rgba(16, 185, 129, 0.1); color: #10b981; }
-
-/* Chart Mockup */
-.chart-container {
-    height: 250px;
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-around;
-    padding-top: 20px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.chart-bar {
-    width: 40px;
-    background-color: var(--primary);
-    border-radius: 4px 4px 0 0;
-    position: relative;
-    transition: height 0.5s ease;
-}
-
-.chart-bar:hover {
-    background-color: var(--primary-hover);
-}
-
-.chart-label {
-    position: absolute;
-    bottom: -25px;
-    width: 100%;
-    text-align: center;
-    font-size: 12px;
-    color: var(--text-muted);
+.card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
 }

@@ -93,8 +93,8 @@ db.serialize(() => {
         seats INTEGER
     )`);
 
-    // 9. System Settings
-    db.run(`CREATE TABLE IF NOT EXISTS system_settings (
+    // 9. System Settings (Unified)
+    db.run(`CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT
     )`);
@@ -170,9 +170,9 @@ db.serialize(() => {
             }
 
             // Seed System Settings
-            db.run("INSERT INTO system_settings (key, value) VALUES ('tax_percentage', '10')");
-            db.run("INSERT INTO system_settings (key, value) VALUES ('currency', '$')");
-            db.run("INSERT INTO system_settings (key, value) VALUES ('restaurant_name', 'TASTY OF ASCENDIA')");
+            db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_rate', '10')");
+            db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('currency_symbol', '$')");
+            db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('business_name', 'TASTY OF ASCENDIA')");
 
             // Seed Customers
             db.run("INSERT INTO customers (name, phone, email, loyalty_points, total_spent) VALUES ('John Doe', '123-456-7890', 'john@example.com', 150, 450.00)");

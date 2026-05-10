@@ -185,16 +185,17 @@ body {
 .topbar-actions {
     display: flex;
     align-items: center;
-    gap: 24px;
+    gap: 16px;
+    height: 100%;
 }
 
 .notification-btn {
     background: var(--glass-bg);
     backdrop-filter: var(--glass-blur);
     border: 1px solid var(--glass-border);
-    width: 46px;
-    height: 46px;
-    border-radius: 14px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
     cursor: pointer;
     display: flex;
     align-items: center;

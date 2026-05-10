@@ -201,28 +201,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if (renderer) {
             appView.innerHTML = '';
             // Network Status Indicator
-            let onlineBadge = document.getElementById('onlineStatus');
-            if (!onlineBadge) {
-                onlineBadge = document.createElement('div');
-                onlineBadge.id = 'onlineStatus';
-                document.body.appendChild(onlineBadge);
+            const onlineBadge = document.getElementById('onlineStatus');
+            if (onlineBadge) {
+                onlineBadge.style = `
+                    padding: 8px 16px; border-radius: 50px; font-size: 11px; font-weight: 800;
+                    background: ${store.data.isOnline ? 'rgba(0, 242, 254, 0.1)' : 'rgba(239, 68, 68, 0.1)'};
+                    color: ${store.data.isOnline ? 'var(--primary)' : '#ef4444'};
+                    display: flex; align-items: center; gap: 8px;
+                    border: 1px solid ${store.data.isOnline ? 'rgba(0, 242, 254, 0.2)' : 'rgba(239, 68, 68, 0.2)'};
+                    letter-spacing: 0.5px;
+                `;
+                onlineBadge.innerHTML = `<span style="width:8px; height:8px; border-radius:50%; background:currentColor; box-shadow: 0 0 10px currentColor;"></span> ${store.data.isOnline ? 'ONLINE' : 'OFFLINE MODE'}`;
             }
-            onlineBadge.style = `
-                position: fixed; top: 16px; right: 280px; z-index: 1000;
-                padding: 4px 12px; border-radius: 50px; font-size: 11px; font-weight: 700;
-                background: ${store.data.isOnline ? '#d1fae5' : '#fee2e2'};
-                color: ${store.data.isOnline ? '#065f46' : '#991b1b'};
-                display: flex; align-items: center; gap: 6px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-            `;
-            onlineBadge.innerHTML = `<span style="width:6px; height:6px; border-radius:50%; background:currentColor;"></span> ${store.data.isOnline ? 'ONLINE' : 'OFFLINE MODE'}`;
 
             window.addEventListener('network_status_change', () => {
                 const badge = document.getElementById('onlineStatus');
                 if (badge) {
-                    badge.style.background = store.data.isOnline ? '#d1fae5' : '#fee2e2';
-                    badge.style.color = store.data.isOnline ? '#065f46' : '#991b1b';
-                    badge.innerHTML = `<span style="width:6px; height:6px; border-radius:50%; background:currentColor;"></span> ${store.data.isOnline ? 'ONLINE' : 'OFFLINE MODE'}`;
+                    badge.style.background = store.data.isOnline ? 'rgba(0, 242, 254, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+                    badge.style.color = store.data.isOnline ? 'var(--primary)' : '#ef4444';
+                    badge.style.border = `1px solid ${store.data.isOnline ? 'rgba(0, 242, 254, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`;
+                    badge.innerHTML = `<span style="width:8px; height:8px; border-radius:50%; background:currentColor; box-shadow: 0 0 10px currentColor;"></span> ${store.data.isOnline ? 'ONLINE' : 'OFFLINE MODE'}`;
                 }
             });
 
@@ -232,8 +230,40 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Sync Brand Identity across UI
+    const syncBrand = () => {
+        const settings = store.data.settings || {};
+        const name = settings.business_name || 'TASTY OF ASCENDIA';
+        
+        // Update Sidebar
+        const sidebarLogo = document.querySelector('.logo-text');
+        if (sidebarLogo) {
+            const [first, ...rest] = name.split(' ');
+            sidebarLogo.innerHTML = `<h2>${first}</h2><p>${rest.join(' ')}</p>`;
+        }
+        
+        // Update Tab Title
+        document.title = `${name} - POS System`;
+        
+        // Update Login Screen if it's currently rendered
+        const loginMain = document.querySelector('.brand-main');
+        if (loginMain) {
+            const [first, ...rest] = name.split(' ');
+            loginMain.textContent = rest.join(' ') || first;
+            const loginTop = document.querySelector('.brand-top');
+            if (loginTop) loginTop.textContent = rest.length > 0 ? first : '';
+        }
+    };
+
     // Wait for store to fetch data from backend
-    window.addEventListener('store_ready', () => {
+    window.addEventListener('store_ready', async () => {
+        // Load Settings on start
+        try {
+            const res = await store.fetchAPI('/settings');
+            store.data.settings = await res.json();
+            syncBrand();
+        } catch (e) { console.error('Failed to load settings:', e); }
+
         // Bind Logout
         const logoutBtn = document.querySelector('.logout');
         if(logoutBtn) {
@@ -273,11 +303,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="login-error" id="loginError"></div>
                         <div class="form-group">
                             <label>Username</label>
-                            <input type="text" id="username" placeholder="e.g. admin, cashier, kitchen" required>
+                            <input type="text" id="username" placeholder="Enter your username" required>
                         </div>
                         <div class="form-group">
                             <label>Password</label>
-                            <input type="password" id="password" placeholder="1234" required>
+                            <input type="password" id="password" placeholder="Enter your password" required>
                         </div>
                         <button type="submit" class="btn btn-primary btn-login">Login</button>
                     </form>
@@ -354,108 +384,140 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="dashboard-layout">
                     <div class="dash-header">
                         <div>
-                            <h2>Business Intelligence</h2>
-                            <p style="color:var(--text-muted);">Comprehensive performance overview</p>
+                            <h2 style="font-size:28px; font-weight:800; letter-spacing:-0.5px;">Business Intelligence</h2>
+                            <p style="color:var(--text-muted); font-size:15px;">Real-time performance analytics for your restaurant.</p>
                         </div>
-                        ${lowStockAlerts.length > 0 ? `
-                            <div style="background:#fee2e2; color:#991b1b; padding:10px 20px; border-radius:14px; display:flex; align-items:center; gap:12px; font-weight:700; font-size:13px; animation: pulse-urgent 2s infinite;">
-                                <i class="fa-solid fa-triangle-exclamation"></i> ${lowStockAlerts.length} LOW STOCK ALERTS
-                            </div>
-                        ` : ''}
+                        <div style="display:flex; gap:12px;">
+                            <button onclick="location.hash='#/order-line'" class="btn btn-primary" style="padding:10px 20px; font-size:13px;"><i class="fa-solid fa-plus"></i> NEW ORDER</button>
+                            ${lowStockAlerts.length > 0 ? `
+                                <div style="background:rgba(239, 68, 68, 0.1); color:#ef4444; border:1px solid rgba(239, 68, 68, 0.2); padding:10px 20px; border-radius:14px; display:flex; align-items:center; gap:10px; font-weight:700; font-size:12px;">
+                                    <i class="fa-solid fa-triangle-exclamation"></i> ${lowStockAlerts.length} STOCK ALERTS
+                                </div>
+                            ` : ''}
+                        </div>
                     </div>
 
-                    <div class="stats-grid">
-                        <div class="stat-card" style="animation: fadeIn 0.3s ease;">
-                            <div class="stat-icon"><i class="fa-solid fa-money-bill-trend-up"></i></div>
+                    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+                        <!-- Revenue Card -->
+                        <div class="stat-card" style="background:linear-gradient(135deg, rgba(0, 242, 254, 0.1) 0%, rgba(0,0,0,0) 100%); border-left:4px solid var(--primary);">
+                            <div class="stat-icon" style="background:var(--primary); color:#000;"><i class="fa-solid fa-dollar-sign"></i></div>
                             <div class="stat-info">
-                                <h3>Overall Revenue</h3>
-                                <div class="stat-value">$${data.totalRevenue.toFixed(2)}</div>
-                                <div class="stat-trend ${trend >= 0 ? 'positive' : 'negative'}">
-                                    <i class="fa-solid fa-arrow-trend-${trend >= 0 ? 'up' : 'down'}"></i> ${trend}% WoW
+                                <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:4px;">Overall Revenue</h4>
+                                <div class="stat-value" style="font-size:32px;">$${Number(data.totalRevenue).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                                <div class="stat-trend ${trend >= 0 ? 'positive' : 'negative'}" style="font-size:13px; font-weight:700; display:flex; align-items:center; gap:4px; margin-top:4px;">
+                                    <i class="fa-solid fa-arrow-trend-${trend >= 0 ? 'up' : 'down'}"></i> ${trend}% <span style="font-weight:500; opacity:0.7;">vs last week</span>
                                 </div>
                             </div>
                         </div>
-                        <div class="stat-card" style="animation: fadeIn 0.4s ease;">
-                            <div class="stat-icon" style="background:#e0e7ff; color:#4f46e5;"><i class="fa-solid fa-bolt"></i></div>
+
+                        <!-- Daily Volume -->
+                        <div class="stat-card" style="background:linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(0,0,0,0) 100%); border-left:4px solid #6366f1;">
+                            <div class="stat-icon" style="background:#6366f1; color:#fff;"><i class="fa-solid fa-chart-simple"></i></div>
                             <div class="stat-info">
-                                <h3>Daily Volume</h3>
-                                <div class="stat-value">$${data.todayRevenue.toFixed(2)}</div>
-                                <div class="stat-trend positive">ACTIVE SESSION</div>
+                                <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:4px;">Today's Sales</h4>
+                                <div class="stat-value" style="font-size:32px;">$${Number(data.todayRevenue).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                                <div style="font-size:13px; color:#6366f1; font-weight:700; margin-top:4px; display:flex; align-items:center; gap:6px;">
+                                    <span style="width:6px; height:6px; border-radius:50%; background:#6366f1; animation:pulse 2s infinite;"></span> LIVE TRACKING
+                                </div>
                             </div>
                         </div>
-                        <div class="stat-card" style="animation: fadeIn 0.5s ease;">
-                            <div class="stat-icon" style="background:#fef3c7; color:#d97706;"><i class="fa-solid fa-users"></i></div>
+
+                        <!-- Customers -->
+                        <div class="stat-card" style="background:linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(0,0,0,0) 100%); border-left:4px solid #f59e0b;">
+                            <div class="stat-icon" style="background:#f59e0b; color:#fff;"><i class="fa-solid fa-users"></i></div>
                             <div class="stat-info">
-                                <h3>Loyalty Base</h3>
-                                <div class="stat-value">${store.data.customers.length}</div>
-                                <div class="stat-trend positive">CUSTOMERS</div>
+                                <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:4px;">Customer Base</h4>
+                                <div class="stat-value" style="font-size:32px;">${store.data.customers.length}</div>
+                                <div style="font-size:13px; color:#f59e0b; font-weight:700; margin-top:4px;">
+                                    LOYALTY MEMBERS
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="dash-bottom" style="margin-top:24px; display:grid; grid-template-columns: 2fr 1fr; gap:24px;">
-                        <div class="card" style="animation: fadeIn 0.6s ease;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                                <h3>Sales Trends (14 Days)</h3>
-                                <div style="font-size:12px; color:var(--text-muted);">Revenue by Day</div>
+                    <div class="dash-bottom" style="margin-top:24px; display:grid; grid-template-columns: 1.8fr 1.2fr; gap:24px;">
+                        <!-- Chart Area -->
+                        <div class="card" style="padding:32px; background:var(--glass-bg); backdrop-filter:blur(20px); border-radius:24px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:32px;">
+                                <div>
+                                    <h3 style="font-size:18px; font-weight:700;">Sales Performance</h3>
+                                    <p style="font-size:13px; color:var(--text-muted);">Revenue trends over the last 14 days</p>
+                                </div>
+                                <div style="padding:8px 16px; background:rgba(255,255,255,0.05); border-radius:12px; font-size:12px; font-weight:700; color:var(--primary);">
+                                    <i class="fa-solid fa-calendar-days"></i> 14 DAY VIEW
+                                </div>
                             </div>
-                            <canvas id="revenueChart" height="300"></canvas>
+                            <div style="height:350px;">
+                                <canvas id="revenueChart"></canvas>
+                            </div>
                         </div>
                         
                         <div style="display:flex; flex-direction:column; gap:24px;">
-                            <div class="card" style="animation: fadeIn 0.7s ease;">
-                                <h3 style="margin-bottom:20px;">Popularity Matrix</h3>
-                                <div style="display:flex; flex-direction:column; gap:12px;">
-                                    ${popularity.map(item => `
-                                        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:rgba(0,0,0,0.03); border-radius:12px;">
-                                            <div>
-                                                <div style="font-weight:700; font-size:14px;">${item.name}</div>
-                                                <div style="font-size:11px; color:var(--text-muted);">${item.units_sold} units sold</div>
+                            <!-- Popularity Matrix -->
+                            <div class="card" style="padding:28px; background:var(--glass-bg); backdrop-filter:blur(20px); border-radius:24px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
+                                    <h3 style="font-size:18px; font-weight:700;">Top Performers</h3>
+                                    <i class="fa-solid fa-crown" style="color:#f59e0b;"></i>
+                                </div>
+                                <div style="display:flex; flex-direction:column; gap:16px;">
+                                    ${popularity.map((item, idx) => {
+                                        const maxRev = Math.max(...popularity.map(p => p.revenue), 1);
+                                        const percentage = (item.revenue / maxRev) * 100;
+                                        return `
+                                            <div style="display:grid; gap:8px;">
+                                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                                    <div style="font-weight:700; font-size:14px; display:flex; align-items:center; gap:10px;">
+                                                        <span style="width:24px; height:24px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.05); border-radius:6px; font-size:11px; color:var(--text-muted);">${idx + 1}</span>
+                                                        ${item.name}
+                                                    </div>
+                                                    <div style="font-weight:800; color:var(--primary); font-size:14px;">$${(item.revenue || 0).toFixed(2)}</div>
+                                                </div>
+                                                <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:10px; overflow:hidden;">
+                                                    <div style="height:100%; width:${percentage}%; background:linear-gradient(90deg, var(--primary) 0%, #6366f1 100%); border-radius:10px;"></div>
+                                                </div>
+                                                <div style="font-size:11px; color:var(--text-muted); font-weight:500;">${item.units_sold} orders today</div>
                                             </div>
-                                            <div style="font-weight:800; color:var(--primary);">$${(item.revenue || 0).toFixed(2)}</div>
-                                        </div>
-                                    `).join('')}
+                                        `;
+                                    }).slice(0, 5).join('')}
                                 </div>
                             </div>
 
-                            <div class="card" style="animation: fadeIn 0.8s ease; background:rgba(255,255,255,0.4);">
-                                <h3 style="margin-bottom:20px;">Peak Hours</h3>
-                                <div style="display:flex; align-items:flex-end; gap:8px; height:80px; padding-bottom:10px;">
-                                    ${peakHours.map(h => {
-                                        const max = Math.max(...peakHours.map(x => x.count), 1);
-                                        const height = (h.count / max) * 100;
-                                        return `
-                                            <div style="flex:1; background:var(--primary); height:${height}%; border-radius:4px; opacity:${0.3 + (height/200)};" title="${h.hour}:00 - ${h.count} orders"></div>
-                                        `;
-                                    }).join('')}
-                                </div>
-                                <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-muted); font-weight:700;">
-                                    <span>00:00</span>
-                                    <span>PEAK LOAD</span>
-                                    <span>23:00</span>
+                            <!-- Operational Insights -->
+                            <div class="card" style="padding:28px; background:var(--glass-bg); backdrop-filter:blur(20px); border-radius:24px;">
+                                <h3 style="font-size:18px; font-weight:700; margin-bottom:24px;">Operational Health</h3>
+                                <div style="display:flex; flex-direction:column; gap:20px;">
+                                    <div style="display:flex; align-items:center; gap:16px;">
+                                        <div style="width:44px; height:44px; background:rgba(0, 242, 254, 0.1); border-radius:12px; display:flex; align-items:center; justify-content:center; color:var(--primary); font-size:18px;">
+                                            <i class="fa-solid fa-clock"></i>
+                                        </div>
+                                        <div>
+                                            <div style="font-size:12px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Avg Prep Time</div>
+                                            <div style="font-weight:800; font-size:18px; color:var(--text-main);">14.2 min <span style="font-size:12px; color:#10b981; font-weight:600;"><i class="fa-solid fa-caret-down"></i> 2.1m</span></div>
+                                        </div>
+                                    </div>
+                                    <div style="display:flex; align-items:center; gap:16px;">
+                                        <div style="width:44px; height:44px; background:rgba(99, 102, 241, 0.1); border-radius:12px; display:flex; align-items:center; justify-content:center; color:#6366f1; font-size:18px;">
+                                            <i class="fa-solid fa-utensils"></i>
+                                        </div>
+                                        <div>
+                                            <div style="font-size:12px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Table Turnover</div>
+                                            <div style="font-weight:800; font-size:18px; color:var(--text-main);">48 min <span style="font-size:12px; color:#ef4444; font-weight:600;"><i class="fa-solid fa-caret-up"></i> 4m</span></div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-
-                    ${lowStockAlerts.length > 0 ? `
-                        <div class="card" style="margin-top:24px; border-color:#fee2e2;">
-                            <h3 style="margin-bottom:16px; color:#991b1b;"><i class="fa-solid fa-triangle-exclamation"></i> Critical Low Stock Items</h3>
-                            <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:16px;">
-                                ${lowStockAlerts.map(item => `
-                                    <div style="padding:16px; background:#fff; border-radius:14px; border:1px solid #fee2e2;">
-                                        <div style="font-weight:700; margin-bottom:4px;">${item.name}</div>
-                                        <div style="color:#ef4444; font-weight:800; font-size:18px;">${item.stock_qty} ${item.unit}</div>
-                                        <div style="font-size:11px; color:var(--text-muted);">Threshold: ${item.low_stock_threshold}</div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
                 </div>
             `;
             
             const ctx = document.getElementById('revenueChart').getContext('2d');
+            
+            // Create Gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, 350);
+            gradient.addColorStop(0, 'rgba(0, 242, 254, 0.2)');
+            gradient.addColorStop(1, 'rgba(0, 242, 254, 0)');
+
             new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -463,23 +525,46 @@ document.addEventListener('DOMContentLoaded', () => {
                     datasets: [{
                         label: 'Daily Revenue',
                         data: [...weeklyTrends].reverse().map(t => t.revenue),
-                        borderColor: '#15b99a',
-                        backgroundColor: 'rgba(21, 185, 154, 0.1)',
+                        borderColor: '#00f2fe',
+                        backgroundColor: gradient,
                         borderWidth: 4,
                         fill: true,
                         tension: 0.4,
-                        pointRadius: 4,
-                        pointBackgroundColor: '#fff',
-                        pointBorderColor: '#15b99a'
+                        pointRadius: 6,
+                        pointHoverRadius: 8,
+                        pointBackgroundColor: '#00f2fe',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#111827',
+                            titleColor: '#9ca3af',
+                            bodyColor: '#fff',
+                            bodyFont: { weight: 'bold', size: 14 },
+                            padding: 12,
+                            borderRadius: 10,
+                            displayColors: false,
+                            callbacks: {
+                                label: (context) => `$${context.parsed.y.toLocaleString()}`
+                            }
+                        }
+                    },
                     scales: {
-                        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
-                        x: { grid: { display: false } }
+                        y: { 
+                            beginAtZero: true, 
+                            grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
+                            ticks: { color: '#9ca3af', font: { size: 11, weight: '600' } }
+                        },
+                        x: { 
+                            grid: { display: false },
+                            ticks: { color: '#9ca3af', font: { size: 11, weight: '600' } }
+                        }
                     }
                 }
             });
@@ -2660,6 +2745,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         const res = await store.fetchAPI('/settings', { method: 'PUT', body: JSON.stringify(updates) });
                         if (res.ok) {
                             Object.assign(settings, updates);
+                            Object.assign(store.data.settings, updates);
+                            syncBrand();
                             window.showToast('Settings saved successfully!', 'success');
                         } else {
                             const err = await res.json();
