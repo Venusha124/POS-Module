@@ -172,7 +172,7 @@ db.serialize(() => {
             // Seed System Settings
             db.run("INSERT INTO system_settings (key, value) VALUES ('tax_percentage', '10')");
             db.run("INSERT INTO system_settings (key, value) VALUES ('currency', '$')");
-            db.run("INSERT INTO system_settings (key, value) VALUES ('restaurant_name', 'Tasty Station')");
+            db.run("INSERT INTO system_settings (key, value) VALUES ('restaurant_name', 'TASTY OF ASCENDIA')");
 
             // Seed Customers
             db.run("INSERT INTO customers (name, phone, email, loyalty_points, total_spent) VALUES ('John Doe', '123-456-7890', 'john@example.com', 150, 450.00)");

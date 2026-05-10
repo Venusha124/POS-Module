@@ -17,7 +17,7 @@ const store = {
         selectedCustomerId: null,
         currentOrderType: 'Dine In',
         settings: {
-            restaurant_name: 'Tasty Station',
+            restaurant_name: 'TASTY OF ASCENDIA',
             currency: '$',
             tax_percentage: '10'
         }

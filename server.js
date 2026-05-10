@@ -694,10 +694,10 @@ app.get('/api/analytics', authorize(['admin']), async (req, res) => {
 
 // --- SETTINGS API ---
 const defaultSettings = {
-    business_name: 'Tasty Station',
+    business_name: 'TASTY OF ASCENDIA',
     business_address: '123 Culinary Ave, Foodville',
     business_phone: '+1 555-123-4567',
-    business_email: 'info@tastystation.com',
+    business_email: 'info@ascendia.com',
     tax_rate: '10',
     currency_symbol: '$',
     receipt_footer: 'Thank you for dining with us!',

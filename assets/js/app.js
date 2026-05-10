@@ -263,8 +263,11 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="login-layout">
                 <div class="login-card">
                     <div class="login-logo">
-                        <div class="logo-icon"><i class="fa-solid fa-bowl-food" style="color:var(--primary);"></i></div>
-                        <h2>Tasty Station</h2>
+                        <div class="logo-icon"><i class="fa-solid fa-bowl-food"></i></div>
+                        <div class="logo-text">
+                            <span class="brand-top">Tasty of</span>
+                            <span class="brand-main">Ascendia</span>
+                        </div>
                     </div>
                     <form class="login-form" id="loginForm">
                         <div class="login-error" id="loginError"></div>
@@ -278,11 +281,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                         <button type="submit" class="btn btn-primary btn-login">Login</button>
                     </form>
-                    <div style="margin-top:24px; font-size:12px; color:var(--text-muted); text-align:left;">
-                        <strong>Demo Accounts:</strong><br>
-                        Admin: <code>admin</code> / <code>1234</code><br>
-                        Cashier: <code>cashier</code> / <code>1234</code><br>
-                        Kitchen: <code>kitchen</code> / <code>1234</code>
+                    <div style="margin-top:24px; text-align:center; font-size:11px; color:rgba(255,255,255,0.3); letter-spacing:0.4px;">
+                        &copy; 2026 All Rights Reserved. <span style="color:rgba(0,242,254,0.5); font-weight:600;">Ascendia Solutions.</span>
                     </div>
                 </div>
             </div>
@@ -598,7 +598,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="modal-content" style="width: 380px;">
                     <div id="receiptContent" style="background:white; padding:20px; color:black; font-family:monospace;">
                         <div style="text-align:center;">
-                            <h2>Tasty Station</h2>
+                            <h2>TASTY OF ASCENDIA</h2>
                             <div style="font-size:11px; color:#555;">123 Culinary Ave, Foodville</div>
                         </div>
                         <div class="receipt-info" style="margin:15px 0; font-size:12px; display:grid; grid-template-columns: 1fr 1fr; gap:5px;">
@@ -2331,6 +2331,393 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderHelp(container) {
-        container.innerHTML = `<h2>Help Center</h2>`;
+        container.innerHTML = `
+            <div style="padding:40px; max-width:800px; margin:0 auto;">
+                <h2 style="margin-bottom:8px;">Help Center</h2>
+                <p style="color:var(--text-muted); margin-bottom:32px;">Quick guide to using the POS system.</p>
+                <div style="display:grid; gap:16px;">
+                    ${[
+                        {icon:'fa-cash-register', title:'Order Line', body:'Select Dine-In or Takeaway, choose a table/customer, add items to cart, and click Pay Now to complete the order.'},
+                        {icon:'fa-chair', title:'Tables', body:'View and manage all restaurant tables. Click a table to see its details and update its status.'},
+                        {icon:'fa-utensils', title:'Dishes', body:'Add, edit, or delete menu items. Use categories to keep the menu organized.'},
+                        {icon:'fa-users', title:'Customers', body:'Manage customer profiles. Search by name or phone number to quickly find returning guests.'},
+                        {icon:'fa-fire-burner', title:'Kitchen', body:'Monitor live kitchen tickets. Mark orders as Ready when preparation is complete.'},
+                        {icon:'fa-gear', title:'Settings', body:'Configure business information, tax rates, currency, and receipt details from the Settings page.'}
+                    ].map(item => `
+                        <div style="display:flex; gap:16px; padding:20px; background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:14px; backdrop-filter:blur(20px);">
+                            <div style="width:44px; height:44px; border-radius:10px; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0;">
+                                <i class="fa-solid ${item.icon}"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight:700; margin-bottom:4px;">${item.title}</div>
+                                <div style="font-size:14px; color:var(--text-muted); line-height:1.6;">${item.body}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    async function renderSettings(container) {
+        container.innerHTML = `<div style="padding:40px; display:flex; align-items:center; gap:12px; color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Loading Settings...</div>`;
+
+        let settings = {};
+        try {
+            const res = await store.fetchAPI('/settings');
+            settings = await res.json();
+        } catch(e) {
+            container.innerHTML = `<div style="padding:40px; color:#ef4444;">Failed to load settings.</div>`;
+            return;
+        }
+
+        let activeTab = 'business';
+
+        const tabs = [
+            { id: 'business', icon: 'fa-building', label: 'Business Info' },
+            { id: 'order', icon: 'fa-receipt', label: 'Orders & Tax' },
+            { id: 'receipt', icon: 'fa-file-invoice', label: 'Receipt' },
+            { id: 'security', icon: 'fa-shield-halved', label: 'Security' },
+        ];
+
+        const inputStyle = `width:100%; padding:12px 16px; border-radius:10px; border:1px solid var(--border-color); background:rgba(255,255,255,0.05); color:var(--text-main); font-size:14px; outline:none; transition:border-color 0.2s;`;
+
+        const tabContent = {
+            business: `
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                    <div class="settings-group">
+                        <label class="settings-label">Business Name</label>
+                        <input id="s_business_name" class="settings-input" type="text" value="${settings.business_name || ''}" style="${inputStyle}">
+                    </div>
+                    <div class="settings-group">
+                        <label class="settings-label">Phone Number</label>
+                        <input id="s_business_phone" class="settings-input" type="text" value="${settings.business_phone || ''}" style="${inputStyle}">
+                    </div>
+                    <div class="settings-group" style="grid-column:1/-1;">
+                        <label class="settings-label">Address</label>
+                        <input id="s_business_address" class="settings-input" type="text" value="${settings.business_address || ''}" style="${inputStyle}">
+                    </div>
+                    <div class="settings-group" style="grid-column:1/-1;">
+                        <label class="settings-label">Email Address</label>
+                        <input id="s_business_email" class="settings-input" type="email" value="${settings.business_email || ''}" style="${inputStyle}">
+                    </div>
+                </div>`,
+            order: `
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                    <div class="settings-group">
+                        <label class="settings-label">Tax Rate (%)</label>
+                        <input id="s_tax_rate" class="settings-input" type="number" min="0" max="100" value="${settings.tax_rate || '10'}" style="${inputStyle}">
+                    </div>
+                    <div class="settings-group">
+                        <label class="settings-label">Currency Symbol</label>
+                        <input id="s_currency_symbol" class="settings-input" type="text" maxlength="3" value="${settings.currency_symbol || '$'}" style="${inputStyle}">
+                    </div>
+                    <div class="settings-group">
+                        <label class="settings-label">Order ID Prefix</label>
+                        <input id="s_order_prefix" class="settings-input" type="text" maxlength="5" value="${settings.order_prefix || 'ORD'}" style="${inputStyle}">
+                    </div>
+                    <div class="settings-group">
+                        <label class="settings-label">Low Stock Alert Threshold</label>
+                        <input id="s_low_stock_threshold" class="settings-input" type="number" min="1" value="${settings.low_stock_threshold || '10'}" style="${inputStyle}">
+                    </div>
+                    <div class="settings-group" style="grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; padding:16px; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:10px;">
+                        <div>
+                            <div style="font-weight:600; margin-bottom:4px;">Allow Discounts</div>
+                            <div style="font-size:13px; color:var(--text-muted);">Enable cashiers to apply manual discounts at checkout</div>
+                        </div>
+                        <label style="position:relative; display:inline-block; width:52px; height:28px; flex-shrink:0;">
+                            <input type="checkbox" id="s_allow_discounts" style="opacity:0; width:0; height:0;" ${settings.allow_discounts === 'true' ? 'checked' : ''}>
+                            <span id="toggle_allow_discounts" style="position:absolute; cursor:pointer; inset:0; border-radius:34px; background:${settings.allow_discounts === 'true' ? 'var(--primary)' : '#374151'}; transition:0.3s;">
+                                <span style="position:absolute; height:20px; width:20px; left:${settings.allow_discounts === 'true' ? '26px' : '4px'}; bottom:4px; border-radius:50%; background:white; transition:0.3s;"></span>
+                            </span>
+                        </label>
+                    </div>
+                </div>`,
+            receipt: `
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; align-items:start;">
+                    <!-- LEFT: Edit Fields -->
+                    <div style="display:grid; gap:16px;">
+                        <div style="font-weight:700; font-size:13px; color:var(--primary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;"><i class="fa-solid fa-pen-to-square"></i> Format Options</div>
+
+                        <div class="settings-group">
+                            <label class="settings-label">Header Title</label>
+                            <input id="rf_header" type="text" value="${settings.business_name || 'TASTY OF ASCENDIA'}" style="${inputStyle}">
+                        </div>
+
+                        <div class="settings-group">
+                            <label class="settings-label">Tagline / Sub-header</label>
+                            <input id="rf_tagline" type="text" value="${settings.receipt_tagline || settings.business_address || '123 Culinary Ave'}" placeholder="e.g. Fine Dining and Takeout" style="${inputStyle}">
+                        </div>
+
+                        <div class="settings-group">
+                            <label class="settings-label">Footer Message</label>
+                            <textarea id="rf_footer" class="settings-input" rows="2" style="${inputStyle} resize:none;">${settings.receipt_footer || 'Thank you for dining with us!'}</textarea>
+                        </div>
+
+                        <div class="settings-group">
+                            <label class="settings-label">Separator Style</label>
+                            <select id="rf_separator" style="${inputStyle} cursor:pointer;">
+                                <option value="dashed" ${(settings.receipt_separator||'dashed')==='dashed' ? 'selected' : ''}>- - - Dashed - - -</option>
+                                <option value="solid" ${(settings.receipt_separator||'')==='solid' ? 'selected' : ''}>Solid Line</option>
+                                <option value="dotted" ${(settings.receipt_separator||'')==='dotted' ? 'selected' : ''}>... Dotted ...</option>
+                            </select>
+                        </div>
+
+                        <div style="font-weight:700; font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; padding-top:8px; border-top:1px solid var(--border-color);">Show / Hide Sections</div>
+
+                        <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; cursor:pointer;">
+                            <span style="font-size:13px; font-weight:500;">Show Date & Time</span>
+                            <input type="checkbox" id="rf_show_date" ${settings.receipt_show_date !== 'false' ? 'checked' : ''} style="width:16px; height:16px; accent-color:var(--primary); cursor:pointer;">
+                        </label>
+                        <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; cursor:pointer;">
+                            <span style="font-size:13px; font-weight:500;">Show Order ID</span>
+                            <input type="checkbox" id="rf_show_orderid" ${settings.receipt_show_orderid !== 'false' ? 'checked' : ''} style="width:16px; height:16px; accent-color:var(--primary); cursor:pointer;">
+                        </label>
+                        <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; cursor:pointer;">
+                            <span style="font-size:13px; font-weight:500;">Show Order Type</span>
+                            <input type="checkbox" id="rf_show_type" ${settings.receipt_show_type !== 'false' ? 'checked' : ''} style="width:16px; height:16px; accent-color:var(--primary); cursor:pointer;">
+                        </label>
+                        <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; cursor:pointer;">
+                            <span style="font-size:13px; font-weight:500;">Show Tax Breakdown</span>
+                            <input type="checkbox" id="rf_show_tax" ${settings.receipt_show_tax !== 'false' ? 'checked' : ''} style="width:16px; height:16px; accent-color:var(--primary); cursor:pointer;">
+                        </label>
+                        <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; cursor:pointer;">
+                            <span style="font-size:13px; font-weight:500;">Show Business Phone</span>
+                            <input type="checkbox" id="rf_show_phone" ${settings.receipt_show_phone !== 'false' ? 'checked' : ''} style="width:16px; height:16px; accent-color:var(--primary); cursor:pointer;">
+                        </label>
+                    </div>
+
+                    <!-- RIGHT: Live Preview -->
+                    <div style="position:sticky; top:0;">
+                        <div style="font-weight:700; font-size:13px; color:var(--primary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px;"><i class="fa-solid fa-eye"></i> Live Preview</div>
+                        <div id="receiptLivePreview" style="background:white; color:#111; font-family:monospace; font-size:12px; line-height:1.9; padding:20px 24px; border-radius:12px; box-shadow:0 0 40px rgba(0,0,0,0.4);"></div>
+                    </div>
+                </div>`,
+            security: `
+                <div style="display:grid; gap:20px; max-width:480px;">
+                    <div style="padding:16px; background:rgba(0,242,254,0.05); border:1px solid rgba(0,242,254,0.2); border-radius:12px; font-size:13px; color:var(--text-muted); display:flex; gap:12px; align-items:flex-start;">
+                        <i class="fa-solid fa-circle-info" style="color:var(--primary); margin-top:2px;"></i>
+                        <span>Changing your password will log you out of all other active sessions. You will need to log in again with the new password.</span>
+                    </div>
+                    <div class="settings-group">
+                        <label class="settings-label">Current Password</label>
+                        <input id="s_current_pass" type="password" placeholder="Enter current password" style="${inputStyle}">
+                    </div>
+                    <div class="settings-group">
+                        <label class="settings-label">New Password</label>
+                        <input id="s_new_pass" type="password" placeholder="Minimum 6 characters" style="${inputStyle}">
+                    </div>
+                    <div class="settings-group">
+                        <label class="settings-label">Confirm New Password</label>
+                        <input id="s_confirm_pass" type="password" placeholder="Repeat new password" style="${inputStyle}">
+                    </div>
+                    <button id="changePasswordBtn" class="btn btn-primary" style="width:fit-content;">
+                        <i class="fa-solid fa-key"></i> Change Password
+                    </button>
+                </div>`
+        };
+
+        const render = () => {
+            container.innerHTML = `
+                <div style="padding:32px; height:100%; display:flex; flex-direction:column; gap:24px; overflow-y:auto;">
+                    <div>
+                        <h2 style="font-size:24px; font-weight:700; margin-bottom:4px;">Settings</h2>
+                        <p style="color:var(--text-muted); font-size:14px;">Manage your restaurant's configuration and preferences.</p>
+                    </div>
+
+                    <div style="display:flex; gap:8px; background:rgba(255,255,255,0.04); padding:6px; border-radius:14px; border:1px solid var(--glass-border); width:fit-content;">
+                        ${tabs.map(t => `
+                            <button data-tab="${t.id}" class="settings-tab-btn" style="padding:10px 20px; border-radius:10px; border:none; cursor:pointer; font-weight:600; font-size:13px; display:flex; align-items:center; gap:8px; transition:all 0.25s;
+                                background:${activeTab === t.id ? 'var(--primary)' : 'transparent'};
+                                color:${activeTab === t.id ? '#000' : 'var(--text-muted)'};
+                                box-shadow:${activeTab === t.id ? 'var(--shadow-glow)' : 'none'};">
+                                <i class="fa-solid ${t.icon}"></i> ${t.label}
+                            </button>
+                        `).join('')}
+                    </div>
+
+                    <div style="background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:20px; padding:32px; backdrop-filter:blur(20px); flex:1; max-width:800px;">
+                        <style>
+                            .settings-label { display:block; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:8px; }
+                            .settings-input:focus { border-color:var(--primary) !important; box-shadow:0 0 0 3px var(--primary-light); }
+                        </style>
+                        ${tabContent[activeTab]}
+
+                        ${activeTab !== 'security' ? `
+                        <div style="margin-top:32px; padding-top:24px; border-top:1px solid var(--border-color); display:flex; gap:12px; justify-content:flex-end;">
+                            <button id="cancelSettingsBtn" class="btn btn-outline">Cancel</button>
+                            <button id="saveSettingsBtn" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+                        </div>` : ''}
+                    </div>
+                </div>
+            `;
+
+            // Tab switching
+            container.querySelectorAll('.settings-tab-btn').forEach(btn => {
+                btn.onclick = () => {
+                    activeTab = btn.getAttribute('data-tab');
+                    render();
+                };
+            });
+
+            // Live Preview for Receipt tab
+            if (activeTab === 'receipt') {
+                const buildPreview = () => {
+                    const header   = document.getElementById('rf_header')?.value || settings.business_name || 'TASTY OF ASCENDIA';
+                    const tagline  = document.getElementById('rf_tagline')?.value || '';
+                    const footer   = document.getElementById('rf_footer')?.value || '';
+                    const sep      = document.getElementById('rf_separator')?.value || 'dashed';
+                    const showDate    = document.getElementById('rf_show_date')?.checked !== false;
+                    const showOrderId = document.getElementById('rf_show_orderid')?.checked !== false;
+                    const showType    = document.getElementById('rf_show_type')?.checked !== false;
+                    const showTax     = document.getElementById('rf_show_tax')?.checked !== false;
+                    const showPhone   = document.getElementById('rf_show_phone')?.checked !== false;
+                    const cur      = settings.currency_symbol || '$';
+                    const tax      = settings.tax_rate || '10';
+                    const prefix   = settings.order_prefix || 'ORD';
+                    const phone    = settings.business_phone || '';
+                    const sepStyle = `border-top:1px ${sep} #555; margin:8px 0; padding-top:8px;`;
+
+                    const preview = document.getElementById('receiptLivePreview');
+                    if (!preview) return;
+                    preview.innerHTML = `
+                        <div style="text-align:center; font-weight:bold; font-size:16px; margin-bottom:2px;">${header}</div>
+                        ${tagline ? `<div style="text-align:center; font-size:11px; color:#555; margin-bottom:8px;">${tagline}</div>` : ''}
+                        ${showPhone && phone ? `<div style="text-align:center; font-size:11px; color:#555; margin-bottom:8px;">${phone}</div>` : ''}
+                        <div style="${sepStyle}">
+                            ${showDate ? `<div>Date: ${new Date().toLocaleString()}</div>` : ''}
+                            ${showOrderId ? `<div>Order ID: ${prefix}-XXXX</div>` : ''}
+                            ${showType ? `<div>Type: Dine In | Table 3</div>` : ''}
+                        </div>
+                        <div style="${sepStyle}">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>1x Grilled Chicken</span><span>${cur}12.00</span></div>
+                            <div style="display:flex; justify-content:space-between;"><span>2x Spring Rolls</span><span>${cur}8.00</span></div>
+                        </div>
+                        <div style="${sepStyle}">
+                            ${showTax ? `<div style="display:flex; justify-content:space-between;"><span>Subtotal:</span><span>${cur}20.00</span></div>` : ''}
+                            ${showTax ? `<div style="display:flex; justify-content:space-between;"><span>Tax (${tax}%):</span><span>${cur}2.00</span></div>` : ''}
+                            <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:13px;"><span>TOTAL:</span><span>${cur}22.00</span></div>
+                        </div>
+                        ${footer ? `<div style="text-align:center; margin-top:14px; font-size:11px; color:#555; border-top:1px ${sep} #ccc; padding-top:10px;">${footer}</div>` : ''}
+                    `;
+                };
+
+                // Attach listeners to all receipt format inputs for live updates
+                setTimeout(() => {
+                    buildPreview();
+                    ['rf_header','rf_tagline','rf_footer','rf_separator','rf_show_date','rf_show_orderid','rf_show_type','rf_show_tax','rf_show_phone'].forEach(id => {
+                        document.getElementById(id)?.addEventListener('input', buildPreview);
+                        document.getElementById(id)?.addEventListener('change', buildPreview);
+                    });
+                }, 0);
+            }
+            const toggleEl = document.getElementById('toggle_allow_discounts');
+            const checkboxEl = document.getElementById('s_allow_discounts');
+            if (toggleEl && checkboxEl) {
+                toggleEl.onclick = () => {
+                    checkboxEl.checked = !checkboxEl.checked;
+                    const checked = checkboxEl.checked;
+                    toggleEl.style.background = checked ? 'var(--primary)' : '#374151';
+                    toggleEl.querySelector('span').style.left = checked ? '26px' : '4px';
+                };
+            }
+
+            // Save Settings
+            const saveBtn = document.getElementById('saveSettingsBtn');
+            if (saveBtn) {
+                saveBtn.onclick = async () => {
+                    const updates = {};
+                    if (activeTab === 'business') {
+                        updates.business_name = document.getElementById('s_business_name').value.trim();
+                        updates.business_phone = document.getElementById('s_business_phone').value.trim();
+                        updates.business_address = document.getElementById('s_business_address').value.trim();
+                        updates.business_email = document.getElementById('s_business_email').value.trim();
+                        if (!updates.business_name) return window.showToast('Business name is required', 'error');
+                    } else if (activeTab === 'order') {
+                        updates.tax_rate = document.getElementById('s_tax_rate').value;
+                        updates.currency_symbol = document.getElementById('s_currency_symbol').value.trim();
+                        updates.order_prefix = document.getElementById('s_order_prefix').value.trim().toUpperCase();
+                        updates.low_stock_threshold = document.getElementById('s_low_stock_threshold').value;
+                        updates.allow_discounts = String(document.getElementById('s_allow_discounts').checked);
+                        if (!updates.currency_symbol) return window.showToast('Currency symbol is required', 'error');
+                        if (isNaN(updates.tax_rate) || updates.tax_rate < 0 || updates.tax_rate > 100) return window.showToast('Tax rate must be 0–100', 'error');
+                    } else if (activeTab === 'receipt') {
+                        updates.receipt_footer       = document.getElementById('rf_footer').value.trim();
+                        updates.receipt_tagline      = document.getElementById('rf_tagline').value.trim();
+                        updates.business_name        = document.getElementById('rf_header').value.trim();
+                        updates.receipt_separator    = document.getElementById('rf_separator').value;
+                        updates.receipt_show_date    = String(document.getElementById('rf_show_date').checked);
+                        updates.receipt_show_orderid = String(document.getElementById('rf_show_orderid').checked);
+                        updates.receipt_show_type    = String(document.getElementById('rf_show_type').checked);
+                        updates.receipt_show_tax     = String(document.getElementById('rf_show_tax').checked);
+                        updates.receipt_show_phone   = String(document.getElementById('rf_show_phone').checked);
+                        if (!updates.business_name) return window.showToast('Header title is required', 'error');
+                    }
+
+                    saveBtn.disabled = true;
+                    saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+                    try {
+                        const res = await store.fetchAPI('/settings', { method: 'PUT', body: JSON.stringify(updates) });
+                        if (res.ok) {
+                            Object.assign(settings, updates);
+                            window.showToast('Settings saved successfully!', 'success');
+                        } else {
+                            const err = await res.json();
+                            window.showToast(err.error || 'Failed to save', 'error');
+                        }
+                    } catch(e) {
+                        window.showToast('Could not connect to server', 'error');
+                    }
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Changes';
+                };
+            }
+
+            // Change Password
+            const changePwBtn = document.getElementById('changePasswordBtn');
+            if (changePwBtn) {
+                changePwBtn.onclick = async () => {
+                    const current = document.getElementById('s_current_pass').value;
+                    const newPw = document.getElementById('s_new_pass').value;
+                    const confirm = document.getElementById('s_confirm_pass').value;
+
+                    if (!current) return window.showToast('Enter your current password', 'error');
+                    if (newPw.length < 6) return window.showToast('New password must be at least 6 characters', 'error');
+                    if (newPw !== confirm) return window.showToast('Passwords do not match', 'error');
+
+                    changePwBtn.disabled = true;
+                    changePwBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+                    try {
+                        const user = store.data.currentUser;
+                        const res = await store.fetchAPI(`/users/${user.id}`, {
+                            method: 'PUT',
+                            body: JSON.stringify({ name: user.name, role: user.role, password: newPw })
+                        });
+                        if (res.ok) {
+                            window.showToast('Password changed! Please log in again.', 'success');
+                            setTimeout(() => {
+                                store.data.currentUser = null;
+                                window.location.hash = '#/login';
+                            }, 1500);
+                        } else {
+                            const err = await res.json();
+                            window.showToast(err.error || 'Failed to change password', 'error');
+                        }
+                    } catch(e) {
+                        window.showToast('Could not connect to server', 'error');
+                    }
+                    changePwBtn.disabled = false;
+                    changePwBtn.innerHTML = '<i class="fa-solid fa-key"></i> Change Password';
+                };
+            }
+
+            document.getElementById('cancelSettingsBtn')?.addEventListener('click', async () => {
+                const res = await store.fetchAPI('/settings');
+                settings = await res.json();
+                render();
+            });
+        };
+
+        render();
     }
 });
