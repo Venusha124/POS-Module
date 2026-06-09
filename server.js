@@ -812,6 +812,7 @@ app.put('/api/settings', authorize(['admin']), async (req, res) => {
     }
 });
 
+
 // --- AUDIT API ---
 app.post('/api/audit', async (req, res) => {
     const { action, entity_type, entity_id, details } = req.body;
@@ -832,7 +833,7 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = 3000;
+const PORT = 301;
 server.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });

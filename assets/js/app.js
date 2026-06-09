@@ -709,12 +709,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button class="payment-opt-btn" data-method="QR"><span>QR PAYMENTS</span></button>
                     </div>
                     <div id="paymentDetailsArea" style="display:none; margin-bottom:20px;">
-                        <div id="cardFields">
+                        <div id="cardFields" style="display:none;">
                             <input type="text" id="cardNameInput" placeholder="Card Name" style="width:100%; padding:12px; border:1px solid var(--border-color); border-radius:8px; margin-bottom:12px; background:rgba(255,255,255,0.05); color:var(--text-main); outline:none;">
                             <input type="text" id="cardNumInput" placeholder="Card Number (16 digits)" style="width:100%; padding:12px; border:1px solid var(--border-color); border-radius:8px; margin-bottom:12px; background:rgba(255,255,255,0.05); color:var(--text-main); outline:none;" maxlength="19">
                             <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
                                 <input type="text" id="cardExpiryInput" placeholder="Expiry Date (MM/YY)" style="width:100%; padding:12px; border:1px solid var(--border-color); border-radius:8px; background:rgba(255,255,255,0.05); color:var(--text-main); outline:none;" maxlength="5">
                                 <input type="text" id="cardCVVInput" placeholder="CVV" style="width:100%; padding:12px; border:1px solid var(--border-color); border-radius:8px; background:rgba(255,255,255,0.05); color:var(--text-main); outline:none;" maxlength="4">
+                            </div>
+                        </div>
+                        <div id="qrFields" style="display:none;">
+                            <div class="qr-code-area">
+                                <img src="assets/images/payment_qr.png" alt="Payment QR Code" class="qr-code-img">
+                                <span class="qr-instruction">Scan this code with your banking app to pay.</span>
                             </div>
                         </div>
                     </div>
@@ -1065,7 +1071,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 payModal.querySelectorAll('.payment-opt-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 const selectedMethod = btn.getAttribute('data-method');
-                document.getElementById('paymentDetailsArea').style.display = selectedMethod === 'Card' ? 'block' : 'none';
+                
+                // Show/Hide specific detail areas
+                document.getElementById('paymentDetailsArea').style.display = (selectedMethod === 'Card' || selectedMethod === 'QR') ? 'block' : 'none';
+                document.getElementById('cardFields').style.display = selectedMethod === 'Card' ? 'block' : 'none';
+                
+                const qrFields = document.getElementById('qrFields');
+                if (selectedMethod === 'QR') {
+                    qrFields.style.display = 'block';
+                    const totalVal = document.getElementById('paymentModalTotal').textContent;
+                    
+                    qrFields.innerHTML = `
+                        <div class="qr-code-area">
+                            <img src="assets/images/payment_qr.png" alt="Payment QR Code" class="qr-code-img">
+                            <div style="color: #333; font-weight: 700; font-size: 18px; margin-bottom: 5px;">
+                                Pay ${totalVal}
+                            </div>
+                            <span class="qr-instruction">Scan this code to complete payment</span>
+                        </div>
+                    `;
+                } else {
+                    qrFields.style.display = 'none';
+                }
+                
                 payModal.setAttribute('data-selected-method', selectedMethod);
             }
         };

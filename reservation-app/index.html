@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ascendia Reservations - Event & Room Management</title>
+    <meta name="description" content="Premium reservation and event management system for Ascendia Hotel.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-logo">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-hotel"></i>
+                </div>
+                <div class="logo-text">
+                    <h2>ASCENDIA</h2>
+                    <p>Reservations</p>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav" id="navMenu">
+                <a href="#/dashboard" class="nav-item" data-route="/dashboard">
+                    <i class="fa-solid fa-border-all"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#/customers" class="nav-item" data-route="/customers">
+                    <i class="fa-solid fa-user-plus"></i>
+                    <span>Customer Registration</span>
+                </a>
+                <a href="#/inquiry" class="nav-item" data-route="/inquiry">
+                    <i class="fa-solid fa-clipboard-question"></i>
+                    <span>Inquiry</span>
+                </a>
+                <a href="#/booking" class="nav-item" data-route="/booking">
+                    <i class="fa-solid fa-calendar-plus"></i>
+                    <span>Booking</span>
+                </a>
+                <a href="#/events" class="nav-item" data-route="/events">
+                    <i class="fa-solid fa-champagne-glasses"></i>
+                    <span>Event Management</span>
+                </a>
+                <a href="#/rooms" class="nav-item" data-route="/rooms">
+                    <i class="fa-solid fa-door-open"></i>
+                    <span>Room Reservation</span>
+                </a>
+                <a href="#/agreement" class="nav-item" data-route="/agreement">
+                    <i class="fa-solid fa-file-contract"></i>
+                    <span>Agreement</span>
+                </a>
+                <a href="#/approval" class="nav-item" data-route="/approval">
+                    <i class="fa-solid fa-stamp"></i>
+                    <span>Sales Approval</span>
+                </a>
+                <a href="#/calendar" class="nav-item" data-route="/calendar">
+                    <i class="fa-regular fa-calendar-days"></i>
+                    <span>Calendar</span>
+                </a>
+                <a href="#/reports" class="nav-item" data-route="/reports">
+                    <i class="fa-solid fa-file-invoice"></i>
+                    <span>Reports</span>
+                </a>
+                <a href="#/settings" class="nav-item" data-route="/settings">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>Settings</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="http://localhost:301" target="_blank" class="nav-item">
+                    <i class="fa-solid fa-cash-register"></i>
+                    <span>Go to POS</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-container">
+            <!-- Topbar -->
+            <header class="topbar">
+                <div class="search-bar">
+                    <i class="fa-solid fa-magnifying-glass" style="color:var(--text-muted); margin-right:12px;"></i>
+                    <input type="text" id="globalSearch" placeholder="Search reservations, customers and more...">
+                </div>
+                <div class="topbar-actions">
+                    <button class="notification-btn" id="refreshBtn" title="Refresh Data">
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </button>
+                    <div class="user-profile">
+                        <img src="https://ui-avatars.com/api/?name=Admin&background=00f2fe&color=000&size=38" class="avatar" alt="Admin">
+                        <div class="user-info">
+                            <span class="user-name">Admin User</span>
+                            <span class="user-role">Manager</span>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dynamic View Container -->
+            <div id="app-view" class="view-container"></div>
+        </main>
+    </div>
+
+    <!-- ===================== MODALS ===================== -->
+
+    <!-- Add Reservation Modal -->
+    <div class="modal-overlay" id="reservationModal">
+        <div class="modal-content" style="max-width:600px;">
+            <button class="modal-close" onclick="closeModal('reservationModal')"><i class="fa-solid fa-xmark"></i></button>
+            <h3><i class="fa-solid fa-calendar-check" style="color:var(--primary); margin-right:10px;"></i>New Reservation</h3>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 20px;">
+                <div class="form-group">
+                    <label>Event Name</label>
+                    <input type="text" id="res_event_name" placeholder="e.g. Birthday Party">
+                </div>
+                <div class="form-group">
+                    <label>Venue / Room</label>
+                    <select id="res_room_id"></select>
+                </div>
+                <div class="form-group">
+                    <label>Customer Name</label>
+                    <input type="text" id="res_customer_name" placeholder="Full name">
+                </div>
+                <div class="form-group">
+                    <label>Phone Number</label>
+                    <input type="text" id="res_customer_phone" placeholder="+94 77 ...">
+                </div>
+                <div class="form-group">
+                    <label>Date From</label>
+                    <input type="date" id="res_date_start">
+                </div>
+                <div class="form-group">
+                    <label>Date To</label>
+                    <input type="date" id="res_date_end">
+                </div>
+                <div class="form-group">
+                    <label>No. of Guests</label>
+                    <input type="number" id="res_num_guests" placeholder="100" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="res_status">
+                        <option value="Confirmed">Confirmed</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Cancelled">Cancelled</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Total Price (Rs.)</label>
+                <input type="number" id="res_total_price" placeholder="0.00">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeModal('reservationModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitReservation()">
+                    <i class="fa-solid fa-check" style="margin-right:8px;"></i>Confirm Reservation
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Customer Modal -->
+    <div class="modal-overlay" id="customerModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('customerModal')"><i class="fa-solid fa-xmark"></i></button>
+            <h3><i class="fa-solid fa-user-plus" style="color:var(--primary); margin-right:10px;"></i>Register Customer</h3>
+            <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" id="cust_name" placeholder="e.g. Saman Perera">
+            </div>
+            <div class="form-group">
+                <label>Phone Number</label>
+                <input type="text" id="cust_phone" placeholder="+94 77 123 4567">
+            </div>
+            <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" id="cust_email" placeholder="email@example.com">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeModal('customerModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitCustomer()">
+                    <i class="fa-solid fa-user-check" style="margin-right:8px;"></i>Register
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Room Modal -->
+    <div class="modal-overlay" id="roomModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('roomModal')"><i class="fa-solid fa-xmark"></i></button>
+            <h3><i class="fa-solid fa-door-open" style="color:var(--primary); margin-right:10px;"></i>Add Venue / Room</h3>
+            <div class="form-group">
+                <label>Venue Name</label>
+                <input type="text" id="room_name" placeholder="e.g. Grand Ballroom">
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 20px;">
+                <div class="form-group">
+                    <label>Capacity (Guests)</label>
+                    <input type="number" id="room_capacity" placeholder="200">
+                </div>
+                <div class="form-group">
+                    <label>Price Per Day (Rs.)</label>
+                    <input type="number" id="room_price" placeholder="50000">
+                </div>
+                <div class="form-group">
+                    <label>Venue Type</label>
+                    <select id="room_type">
+                        <option value="Banquet">Banquet</option>
+                        <option value="Meeting">Meeting Room</option>
+                        <option value="Outdoor">Outdoor</option>
+                        <option value="Conference">Conference</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="room_status">
+                        <option value="Available">Available</option>
+                        <option value="Booked">Booked</option>
+                        <option value="Maintenance">Maintenance</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeModal('roomModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitRoom()">
+                    <i class="fa-solid fa-plus" style="margin-right:8px;"></i>Add Venue
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== INQUIRY MODAL ===================== -->
+    <div class="modal-overlay" id="inquiryModal">
+        <div class="modal-content" style="max-width:680px; max-height:90vh; overflow-y:auto;">
+            <button class="modal-close" onclick="closeModal('inquiryModal')"><i class="fa-solid fa-xmark"></i></button>
+            <h3 id="inquiryModalTitle"><i class="fa-solid fa-clipboard-question" style="color:var(--primary);margin-right:10px;"></i>New Inquiry</h3>
+
+            <!-- Step Indicator -->
+            <div class="inq-steps" id="inqSteps">
+                <div class="inq-step active" id="step-dot-1">1</div>
+                <div class="inq-step-line"></div>
+                <div class="inq-step" id="step-dot-2">2</div>
+                <div class="inq-step-line"></div>
+                <div class="inq-step" id="step-dot-3">3</div>
+            </div>
+
+            <!-- Step 1: Customer Info -->
+            <div id="inq-step-1" class="inq-step-content">
+                <p class="step-label">Step 1 of 3 — Customer Information</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px;">
+                    <div class="form-group"><label>Full Name *</label><input id="inq_customer_name" type="text" placeholder="e.g. Saman Perera"></div>
+                    <div class="form-group"><label>Phone Number</label><input id="inq_customer_phone" type="text" placeholder="+94 77 123 4567"></div>
+                    <div class="form-group" style="grid-column:1/-1;"><label>Email Address</label><input id="inq_customer_email" type="email" placeholder="email@example.com"></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px;">
+                    <div class="form-group"><label>Source</label>
+                        <select id="inq_source">
+                            <option value="Walk-in">Walk-in</option>
+                            <option value="Phone Call">Phone Call</option>
+                            <option value="Email">Email</option>
+                            <option value="Social Media">Social Media</option>
+                            <option value="Website">Website</option>
+                            <option value="Referral">Referral</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>Assigned To</label><input id="inq_assigned_to" type="text" placeholder="Staff member name"></div>
+                </div>
+            </div>
+
+            <!-- Step 2: Event Details -->
+            <div id="inq-step-2" class="inq-step-content" style="display:none;">
+                <p class="step-label">Step 2 of 3 — Event Details</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px;">
+                    <div class="form-group"><label>Event Type</label>
+                        <select id="inq_event_type">
+                            <option value="Wedding">Wedding</option>
+                            <option value="Birthday Party">Birthday Party</option>
+                            <option value="Corporate Event">Corporate Event</option>
+                            <option value="Conference">Conference</option>
+                            <option value="Anniversary">Anniversary</option>
+                            <option value="Product Launch">Product Launch</option>
+                            <option value="Gala Dinner">Gala Dinner</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>Preferred Venue</label>
+                        <select id="inq_room_id"><option value="">-- No Preference --</option></select>
+                    </div>
+                    <div class="form-group"><label>Preferred Date</label><input id="inq_preferred_date" type="date"></div>
+                    <div class="form-group"><label>Number of Guests</label><input id="inq_num_guests" type="number" placeholder="100" min="1"></div>
+                    <div class="form-group"><label>Estimated Budget (Rs.)</label><input id="inq_budget" type="number" placeholder="0.00"></div>
+                    <div class="form-group"><label>Follow-up Date</label><input id="inq_follow_up_date" type="date"></div>
+                </div>
+                <div class="form-group">
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                        <input type="checkbox" id="inq_flexible_date" style="width:auto;padding:0;border:none;background:none;"> Date is flexible
+                    </label>
+                </div>
+            </div>
+
+            <!-- Step 3: Requirements -->
+            <div id="inq-step-3" class="inq-step-content" style="display:none;">
+                <p class="step-label">Step 3 of 3 — Requirements & Notes</p>
+                <div class="form-group">
+                    <label>Special Requirements</label>
+                    <textarea id="inq_requirements" rows="4" placeholder="Describe any special setup, catering, AV equipment, decorations, or other requirements..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Internal Notes</label>
+                    <textarea id="inq_notes" rows="3" placeholder="Internal notes for staff only..."></textarea>
+                </div>
+            </div>
+
+            <!-- Navigation Buttons -->
+            <div class="modal-actions">
+                <button class="btn btn-outline" id="inqPrevBtn" onclick="inqPrev()" style="display:none;"><i class="fa-solid fa-arrow-left" style="margin-right:8px;"></i>Back</button>
+                <button class="btn btn-primary" id="inqNextBtn" onclick="inqNext()" style="flex:1;justify-content:center;">Next <i class="fa-solid fa-arrow-right" style="margin-left:8px;"></i></button>
+                <button class="btn btn-primary" id="inqSubmitBtn" onclick="submitInquiry()" style="display:none;flex:1;justify-content:center;"><i class="fa-solid fa-floppy-disk" style="margin-right:8px;"></i>Save Inquiry</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Inquiry Detail Modal -->
+    <div class="modal-overlay" id="inquiryDetailModal">
+        <div class="modal-content" style="max-width:600px;">
+            <button class="modal-close" onclick="closeModal('inquiryDetailModal')"><i class="fa-solid fa-xmark"></i></button>
+            <div id="inquiryDetailBody"></div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast" style="display:none;"></div>
+
+    <!-- Scripts -->
+    <script src="assets/js/store.js"></script>
+    <script src="assets/js/app.js"></script>
+</body>
+</html>

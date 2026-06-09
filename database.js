@@ -121,6 +121,31 @@ db.serialize(() => {
         total_spent REAL DEFAULT 0.0
     )`);
 
+    // 11. Event Rooms
+    db.run(`CREATE TABLE IF NOT EXISTS event_rooms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        capacity INTEGER,
+        price_per_day REAL,
+        type TEXT,
+        status TEXT
+    )`);
+
+    // 12. Reservations
+    db.run(`CREATE TABLE IF NOT EXISTS reservations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_name TEXT,
+        customer_name TEXT,
+        customer_phone TEXT,
+        room_id INTEGER,
+        date_start TEXT,
+        date_end TEXT,
+        num_guests INTEGER,
+        status TEXT,
+        total_price REAL,
+        FOREIGN KEY(room_id) REFERENCES event_rooms(id)
+    )`);
+
     // Seed Data (if empty)
     db.get("SELECT COUNT(*) as count FROM categories", (err, row) => {
         if (row.count === 0) {
@@ -199,6 +224,11 @@ db.serialize(() => {
             db.run("INSERT INTO customers (name, phone, email, loyalty_points, total_spent) VALUES ('John Doe', '123-456-7890', 'john@example.com', 150, 450.00)");
             db.run("INSERT INTO customers (name, phone, email, loyalty_points, total_spent) VALUES ('Jane Smith', '987-654-3210', 'jane@example.com', 85, 210.50)");
             db.run("INSERT INTO customers (name, phone, email, loyalty_points, total_spent) VALUES ('Robert Brown', '555-0199', 'robert@example.com', 20, 55.00)");
+
+            // Seed Event Rooms
+            db.run("INSERT INTO event_rooms (name, capacity, price_per_day, type, status) VALUES ('Grand Banquet Hall', 200, 50000.00, 'Banquet', 'Available')");
+            db.run("INSERT INTO event_rooms (name, capacity, price_per_day, type, status) VALUES ('Executive Meeting Room', 20, 15000.00, 'Meeting', 'Available')");
+            db.run("INSERT INTO event_rooms (name, capacity, price_per_day, type, status) VALUES ('Rooftop Terrace', 100, 30000.00, 'Outdoor', 'Available')");
         }
     });
 });

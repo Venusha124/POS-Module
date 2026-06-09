@@ -175,7 +175,10 @@ const store = {
             return null;
         }
         
-        const total = this.data.cart.reduce((sum, item) => sum + (item.dish.price * item.qty), 0);
+        const subtotal = this.data.cart.reduce((sum, item) => sum + (item.dish.price * item.qty), 0);
+        const taxRate = parseFloat(this.data.settings.tax_rate || 0) / 100;
+        const total = subtotal * (1 + taxRate);
+        
         const orderData = { 
             items: this.data.cart, 
             total, 
@@ -227,7 +230,9 @@ const store = {
                 this.fetchAPI('/dishes').then(r => r.json()),
                 this.fetchAPI('/orders').then(r => r.json()),
                 this.fetchAPI('/customers').then(r => r.json()),
-                this.fetchAPI('/tables').then(r => r.json())
+                this.fetchAPI('/tables').then(r => r.json()),
+                this.fetchAPI('/event-rooms').then(r => r.json()),
+                this.fetchAPI('/reservations').then(r => r.json())
             ];
 
             if (this.data.currentUser && this.data.currentUser.role === 'admin') {
@@ -236,12 +241,14 @@ const store = {
                 endpoints.push(Promise.resolve(this.data.inventory || [])); 
             }
 
-            const [dishes, orders, customers, tables, inventory] = await Promise.all(endpoints);
+            const [dishes, orders, customers, tables, eventRooms, reservations, inventory] = await Promise.all(endpoints);
             
             this.data.dishes = dishes;
             this.data.orders = orders;
             this.data.customers = customers;
             this.data.tables = tables;
+            this.data.eventRooms = eventRooms;
+            this.data.reservations = reservations;
             this.data.inventory = inventory;
             
             this.checkLowStock();
