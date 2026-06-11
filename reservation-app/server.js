@@ -31,6 +31,36 @@ const getOne = (query, params = []) => new Promise((resolve, reject) => {
     });
 });
 
+const promoteWaitlistIfAny = async (roomId) => {
+    if (!roomId) return null;
+    const nextInLine = await getOne("SELECT * FROM waitlist WHERE room_id = ? ORDER BY created_at ASC LIMIT 1", [roomId]);
+    if (nextInLine) {
+        // Insert new pending reservation
+        const result = await runQuery(`
+            INSERT INTO reservations (event_name, customer_name, customer_phone, room_id, date_start, date_end, num_guests, status, total_price, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', 0.0, ?, datetime('now'))
+        `, [nextInLine.event_name || 'Waitlisted Event', nextInLine.customer_name, nextInLine.customer_phone, roomId, nextInLine.date_start, nextInLine.date_end, nextInLine.num_guests, nextInLine.notes || 'Promoted from Waitlist']);
+        
+        // Seed default setup/buffer tasks
+        await runQuery("INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status) VALUES (?, ?, 'Pre-event Venue Setup', 'Pending')", [roomId, result.lastID]);
+        await runQuery("INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status) VALUES (?, ?, 'AV sound and display systems check', 'Pending')", [roomId, result.lastID]);
+        await runQuery("INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status) VALUES (?, ?, 'Post-event cleaning and buffer preparation', 'Pending')", [roomId, result.lastID]);
+        
+        // Set room status to Maintenance for setup/buffer
+        await runQuery("UPDATE event_rooms SET status = 'Maintenance' WHERE id = ?", [roomId]);
+
+        // Delete from waitlist
+        await runQuery("DELETE FROM waitlist WHERE id = ?", [nextInLine.id]);
+        
+        return {
+            reservation_id: result.lastID,
+            customer_name: nextInLine.customer_name,
+            event_name: nextInLine.event_name
+        };
+    }
+    return null;
+};
+
 // ─── Ensure tables exist (safe for shared DB) ───────────────────────────────
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS event_rooms (
@@ -61,6 +91,34 @@ db.serialize(() => {
     // Add notes & created_at columns if upgrading an older DB
     db.run("ALTER TABLE reservations ADD COLUMN notes TEXT", () => {});
     db.run("ALTER TABLE reservations ADD COLUMN created_at TEXT DEFAULT (datetime('now'))", () => {});
+    db.run("ALTER TABLE reservations ADD COLUMN signature_data TEXT", () => {});
+
+    // ── Waitlist Table ───────────────────────────────────────────────────────
+    db.run(`CREATE TABLE IF NOT EXISTS waitlist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_id INTEGER,
+        customer_name TEXT,
+        customer_phone TEXT,
+        date_start TEXT,
+        date_end TEXT,
+        num_guests INTEGER,
+        event_name TEXT,
+        notes TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(room_id) REFERENCES event_rooms(id)
+    )`);
+
+    // ── Maintenance Tasks Table ──────────────────────────────────────────────
+    db.run(`CREATE TABLE IF NOT EXISTS maintenance_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_id INTEGER,
+        reservation_id INTEGER,
+        task_name TEXT,
+        status TEXT DEFAULT 'Pending',
+        due_date TEXT,
+        FOREIGN KEY(room_id) REFERENCES event_rooms(id),
+        FOREIGN KEY(reservation_id) REFERENCES reservations(id)
+    )`);
 
     // ── Inquiries Table ───────────────────────────────────────────────────────
     db.run(`CREATE TABLE IF NOT EXISTS inquiries (
@@ -348,9 +406,12 @@ app.post('/api/reservations', async (req, res) => {
             [event_name, customer_name, customer_phone, room_id || null, date_start, date_end, num_guests, status || 'Pending', total_price, notes || null]
         );
 
-        // If confirmed, mark room as booked
+        // If confirmed, mark room as booked and seed default maintenance/buffer tasks
         if ((status === 'Confirmed') && room_id) {
             await runQuery("UPDATE event_rooms SET status = 'Booked' WHERE id = ?", [room_id]);
+            await runQuery("INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status) VALUES (?, ?, 'Pre-event Venue Setup', 'Pending')", [room_id, result.lastID]);
+            await runQuery("INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status) VALUES (?, ?, 'AV sound and display systems check', 'Pending')", [room_id, result.lastID]);
+            await runQuery("INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status) VALUES (?, ?, 'Post-event cleaning and buffer preparation', 'Pending')", [room_id, result.lastID]);
         }
 
         const row = await getOne(`
@@ -384,10 +445,17 @@ app.put('/api/reservations/:id', async (req, res) => {
             [event_name, customer_name, customer_phone, room_id, date_start, date_end, num_guests, status, total_price, notes, req.params.id]
         );
 
+        let promoted = null;
         // Sync room status based on reservation status changes
         if (old && old.room_id) {
             if (status === 'Confirmed') {
                 await runQuery("UPDATE event_rooms SET status = 'Booked' WHERE id = ?", [old.room_id]);
+                const existing = await allQuery("SELECT id FROM maintenance_tasks WHERE reservation_id = ?", [req.params.id]);
+                if (existing.length === 0) {
+                    await runQuery("INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status) VALUES (?, ?, 'Pre-event Venue Setup', 'Pending')", [old.room_id, req.params.id]);
+                    await runQuery("INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status) VALUES (?, ?, 'AV sound and display systems check', 'Pending')", [old.room_id, req.params.id]);
+                    await runQuery("INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status) VALUES (?, ?, 'Post-event cleaning and buffer preparation', 'Pending')", [old.room_id, req.params.id]);
+                }
             } else if (status === 'Cancelled') {
                 // Check if any other confirmed reservations use this room
                 const others = await allQuery(
@@ -397,6 +465,7 @@ app.put('/api/reservations/:id', async (req, res) => {
                 if (others.length === 0) {
                     await runQuery("UPDATE event_rooms SET status = 'Available' WHERE id = ?", [old.room_id]);
                 }
+                promoted = await promoteWaitlistIfAny(old.room_id);
             }
         }
 
@@ -405,6 +474,7 @@ app.put('/api/reservations/:id', async (req, res) => {
             FROM reservations r LEFT JOIN event_rooms e ON r.room_id = e.id
             WHERE r.id = ?
         `, [req.params.id]);
+        if (promoted) updated.promoted = promoted;
         res.json(updated);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -419,10 +489,17 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
         const old = await getOne("SELECT * FROM reservations WHERE id = ?", [req.params.id]);
         await runQuery("UPDATE reservations SET status = ? WHERE id = ?", [status, req.params.id]);
 
+        let promoted = null;
         // Sync room status
         if (old && old.room_id) {
             if (status === 'Confirmed') {
                 await runQuery("UPDATE event_rooms SET status = 'Booked' WHERE id = ?", [old.room_id]);
+                const existing = await allQuery("SELECT id FROM maintenance_tasks WHERE reservation_id = ?", [req.params.id]);
+                if (existing.length === 0) {
+                    await runQuery("INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status) VALUES (?, ?, 'Pre-event Venue Setup', 'Pending')", [old.room_id, req.params.id]);
+                    await runQuery("INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status) VALUES (?, ?, 'AV sound and display systems check', 'Pending')", [old.room_id, req.params.id]);
+                    await runQuery("INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status) VALUES (?, ?, 'Post-event cleaning and buffer preparation', 'Pending')", [old.room_id, req.params.id]);
+                }
             } else if (status === 'Cancelled') {
                 const others = await allQuery(
                     "SELECT id FROM reservations WHERE room_id = ? AND status = 'Confirmed' AND id != ?",
@@ -431,6 +508,7 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
                 if (others.length === 0) {
                     await runQuery("UPDATE event_rooms SET status = 'Available' WHERE id = ?", [old.room_id]);
                 }
+                promoted = await promoteWaitlistIfAny(old.room_id);
             }
         }
 
@@ -439,6 +517,7 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
             FROM reservations r LEFT JOIN event_rooms e ON r.room_id = e.id
             WHERE r.id = ?
         `, [req.params.id]);
+        if (promoted) updated.promoted = promoted;
         res.json(updated);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -451,6 +530,7 @@ app.delete('/api/reservations/:id', async (req, res) => {
         const old = await getOne("SELECT * FROM reservations WHERE id = ?", [req.params.id]);
         await runQuery("DELETE FROM reservations WHERE id = ?", [req.params.id]);
 
+        let promoted = null;
         // Free the room if no other confirmed bookings for it
         if (old && old.room_id) {
             const others = await allQuery(
@@ -460,8 +540,9 @@ app.delete('/api/reservations/:id', async (req, res) => {
             if (others.length === 0) {
                 await runQuery("UPDATE event_rooms SET status = 'Available' WHERE id = ?", [old.room_id]);
             }
+            promoted = await promoteWaitlistIfAny(old.room_id);
         }
-        res.json({ success: true });
+        res.json({ success: true, promoted });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -539,6 +620,151 @@ app.delete('/api/customers/:id', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+
+// ═══════════════════════════════════════════════════════════
+// WAITLIST API
+// ═══════════════════════════════════════════════════════════
+
+app.get('/api/waitlist', async (req, res) => {
+    try {
+        const rows = await allQuery(`
+            SELECT w.*, e.name as room_name 
+            FROM waitlist w
+            LEFT JOIN event_rooms e ON w.room_id = e.id
+            ORDER BY w.created_at ASC
+        `);
+        res.json(rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/waitlist', async (req, res) => {
+    const { room_id, customer_name, customer_phone, date_start, date_end, num_guests, event_name, notes } = req.body;
+    if (!customer_name) return res.status(400).json({ error: 'Customer name is required' });
+    if (!room_id) return res.status(400).json({ error: 'Room selection is required' });
+    try {
+        const result = await runQuery(`
+            INSERT INTO waitlist (room_id, customer_name, customer_phone, date_start, date_end, num_guests, event_name, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [room_id, customer_name, customer_phone, date_start, date_end, num_guests, event_name, notes]);
+        const entry = await getOne(`
+            SELECT w.*, e.name as room_name FROM waitlist w LEFT JOIN event_rooms e ON w.room_id = e.id WHERE w.id = ?
+        `, [result.lastID]);
+        res.status(201).json(entry);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/waitlist/:id', async (req, res) => {
+    try {
+        await runQuery("DELETE FROM waitlist WHERE id = ?", [req.params.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// MAINTENANCE TASKS API
+// ═══════════════════════════════════════════════════════════
+
+app.get('/api/maintenance-tasks', async (req, res) => {
+    try {
+        const rows = await allQuery(`
+            SELECT m.*, e.name as room_name, r.event_name
+            FROM maintenance_tasks m
+            LEFT JOIN event_rooms e ON m.room_id = e.id
+            LEFT JOIN reservations r ON m.reservation_id = r.id
+            ORDER BY m.id DESC
+        `);
+        res.json(rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/maintenance-tasks', async (req, res) => {
+    const { room_id, reservation_id, task_name, status, due_date } = req.body;
+    if (!task_name) return res.status(400).json({ error: 'Task name is required' });
+    if (!room_id) return res.status(400).json({ error: 'Room selection is required' });
+    try {
+        const result = await runQuery(`
+            INSERT INTO maintenance_tasks (room_id, reservation_id, task_name, status, due_date)
+            VALUES (?, ?, ?, ?, ?)
+        `, [room_id, reservation_id || null, task_name, status || 'Pending', due_date || null]);
+        
+        if ((status || 'Pending') === 'Pending') {
+            await runQuery("UPDATE event_rooms SET status = 'Maintenance' WHERE id = ?", [room_id]);
+        }
+
+        const task = await getOne("SELECT * FROM maintenance_tasks WHERE id = ?", [result.lastID]);
+        res.status(201).json(task);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.patch('/api/maintenance-tasks/:id', async (req, res) => {
+    const { status } = req.body;
+    if (!status) return res.status(400).json({ error: 'status is required' });
+    try {
+        await runQuery("UPDATE maintenance_tasks SET status = ? WHERE id = ?", [status, req.params.id]);
+        const task = await getOne("SELECT * FROM maintenance_tasks WHERE id = ?", [req.params.id]);
+        
+        if (status === 'Completed' && task.room_id) {
+            const activeTasks = await allQuery("SELECT id FROM maintenance_tasks WHERE room_id = ? AND status = 'Pending'", [task.room_id]);
+            if (activeTasks.length === 0) {
+                const confirmedNow = await allQuery(`
+                    SELECT id FROM reservations 
+                    WHERE room_id = ? 
+                      AND status = 'Confirmed' 
+                      AND date('now') BETWEEN date(date_start) AND date(COALESCE(date_end, date_start))
+                `, [task.room_id]);
+                const newStatus = confirmedNow.length > 0 ? 'Booked' : 'Available';
+                await runQuery("UPDATE event_rooms SET status = ? WHERE id = ?", [newStatus, task.room_id]);
+            }
+        } else if (status === 'Pending' && task.room_id) {
+            await runQuery("UPDATE event_rooms SET status = 'Maintenance' WHERE id = ?", [task.room_id]);
+        }
+
+        res.json(task);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// SETTINGS API
+// ═══════════════════════════════════════════════════════════
+
+app.get('/api/settings', async (req, res) => {
+    try {
+        await runQuery(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
+        const rows = await allQuery("SELECT key, value FROM settings");
+        const settings = {};
+        rows.forEach(r => settings[r.key] = r.value);
+        res.json(settings);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/settings', async (req, res) => {
+    const settings = req.body;
+    try {
+        await runQuery(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`);
+        for (const [key, value] of Object.entries(settings)) {
+            await runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, String(value)]);
+        }
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// E-SIGNATURES API
+// ═══════════════════════════════════════════════════════════
+
+app.patch('/api/reservations/:id/signature', async (req, res) => {
+    const { signature_data } = req.body;
+    if (!signature_data) return res.status(400).json({ error: 'signature_data is required' });
+    try {
+        await runQuery("UPDATE reservations SET signature_data = ? WHERE id = ?", [signature_data, req.params.id]);
+        res.json({ success: true, message: 'Signature updated successfully' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 const PORT = 302;

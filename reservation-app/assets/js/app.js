@@ -156,6 +156,33 @@ async function submitReservation() {
     if (body.num_guests && body.num_guests < 1) { showToast('Number of guests must be at least 1', 'warning'); return; }
     if (body.total_price && body.total_price < 0) { showToast('Total price cannot be negative', 'warning'); return; }
 
+    const overlaps = checkOverlap(body.room_id, body.date_start, body.date_end, _editingReservationId);
+    if (overlaps && body.status === 'Confirmed') {
+        if (confirm('⚠️ VENUE OVERLAP CONFLICT!\n\nThis room/venue is already booked for the selected dates. Would you like to add the customer to the Waitlist queue instead?')) {
+            try {
+                await store.fetchAPI('/waitlist', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        room_id: body.room_id,
+                        customer_name: body.customer_name,
+                        customer_phone: body.customer_phone,
+                        date_start: body.date_start,
+                        date_end: body.date_end,
+                        num_guests: body.num_guests,
+                        event_name: body.event_name,
+                        notes: body.notes || ''
+                    })
+                });
+                await store.refreshData();
+                showToast('Customer added to the Waitlist queue ✓', 'success');
+                closeModal('reservationModal');
+            } catch (err) {
+                showToast('Failed to add to Waitlist: ' + err.message, 'danger');
+            }
+        }
+        return;
+    }
+
     try {
         if (_editingReservationId) {
             await store.fetchAPI(`/reservations/${_editingReservationId}`, { method: 'PUT', body: JSON.stringify(body) });
@@ -530,20 +557,58 @@ function renderInquiry(c) {
 }
 
 
+function checkOverlap(roomId, dateStart, dateEnd, excludeResId = null) {
+    if (!roomId || !dateStart) return false;
+    const start = new Date(dateStart);
+    const end = dateEnd ? new Date(dateEnd) : start;
+    
+    return store.data.reservations.some(r => {
+        if (r.room_id != roomId) return false;
+        if (r.status !== 'Confirmed') return false;
+        if (excludeResId && r.id == excludeResId) return false;
+        
+        const rStart = new Date(r.date_start);
+        const rEnd = r.date_end ? new Date(r.date_end) : rStart;
+        
+        return start <= rEnd && end >= rStart;
+    });
+}
+
+async function deleteWaitlistEntry(id) {
+    if (!confirm('Remove this customer from the waitlist queue?')) return;
+    try {
+        await store.fetchAPI(`/waitlist/${id}`, { method: 'DELETE' });
+        await store.refreshData();
+        showToast('Waitlist entry removed ✓', 'success');
+    } catch (err) {
+        showToast('Failed to remove waitlist entry: ' + err.message, 'danger');
+    }
+}
+
 async function updateReservationStatus(id, status) {
     try {
-        await store.fetchAPI(`/reservations/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+        const response = await store.fetchAPI(`/reservations/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }).then(r => r.json());
         await store.refreshData();
         showToast(`Reservation ${status} — database updated ✓`, 'success');
+        if (response.promoted) {
+            setTimeout(() => {
+                alert(`🎉 WAITLIST PROMOTION:\n\nCustomer "${response.promoted.customer_name}" has been automatically promoted to a Pending booking for Room/Venue!`);
+            }, 500);
+        }
     } catch(e) { showToast('Failed to update status: ' + e.message, 'danger'); }
 }
 
 async function deleteReservation(id) {
     if (!confirm('Permanently delete this reservation?')) return;
     try {
-        await store.fetchAPI(`/reservations/${id}`, { method: 'DELETE' });
+        const response = await store.fetchAPI(`/reservations/${id}`, { method: 'DELETE' }).then(r => r.json());
         await store.refreshData();
         showToast('Reservation deleted from database ✓', 'success');
+        if (response.promoted) {
+            setTimeout(() => {
+                alert(`🎉 WAITLIST PROMOTION:\n\nCustomer "${response.promoted.customer_name}" has been automatically promoted to a Pending booking for Room/Venue!`);
+            }, 500);
+        }
     } catch(e) { showToast('Failed to delete: ' + e.message, 'danger'); }
 }
 
@@ -675,6 +740,33 @@ async function submitBookingForm() {
     if (body.date_end && new Date(body.date_start) > new Date(body.date_end)) { showToast('End date cannot be before start date', 'warning'); return; }
     if (body.num_guests && body.num_guests < 1) { showToast('Number of guests must be at least 1', 'warning'); return; }
     if (body.total_price && body.total_price < 0) { showToast('Total price cannot be negative', 'warning'); return; }
+
+    const overlaps = checkOverlap(body.room_id, body.date_start, body.date_end);
+    if (overlaps && body.status === 'Confirmed') {
+        if (confirm('⚠️ VENUE OVERLAP CONFLICT!\n\nThis room/venue is already booked for the selected dates. Would you like to add the customer to the Waitlist queue instead?')) {
+            try {
+                await store.fetchAPI('/waitlist', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        room_id: body.room_id,
+                        customer_name: body.customer_name,
+                        customer_phone: body.customer_phone,
+                        date_start: body.date_start,
+                        date_end: body.date_end,
+                        num_guests: body.num_guests,
+                        event_name: body.event_name,
+                        notes: body.notes || ''
+                    })
+                });
+                await store.refreshData();
+                showToast('Customer added to the Waitlist queue ✓', 'success');
+                clearBookingForm();
+            } catch (err) {
+                showToast('Failed to add to Waitlist: ' + err.message, 'danger');
+            }
+        }
+        return;
+    }
 
     try {
         await store.fetchAPI('/reservations', { method: 'POST', body: JSON.stringify(body) });
@@ -929,6 +1021,8 @@ function renderBooking(c) {
         .map(r => `<option value="${r.id}">${r.name} — ${formatCurrency(r.price_per_day)}/day (Cap: ${r.capacity})</option>`)
         .join('');
 
+    const waitlist = store.data.waitlist || [];
+
     c.innerHTML = `
     <div class="card" style="margin-bottom:24px;">
         <div class="section-header">
@@ -964,6 +1058,56 @@ function renderBooking(c) {
         </div>
     </div>
 
+    <!-- Waitlist Card -->
+    <div class="card" style="margin-bottom:24px;">
+        <div class="section-header">
+            <div>
+                <h2><i class="fa-solid fa-people-line" style="color:var(--primary);margin-right:10px;"></i>Customer Waitlist Queue</h2>
+                <p>${waitlist.length} customers waitlisted for occupied venues</p>
+            </div>
+        </div>
+        ${waitlist.length === 0 ? `
+            <div class="empty-state" style="padding:24px;">
+                <i class="fa-solid fa-users-slash"></i>
+                <h3>Waitlist is empty</h3>
+                <p>No customers currently in the waitlist queue.</p>
+            </div>
+        ` : `
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Room / Venue</th>
+                            <th>Customer</th>
+                            <th>Phone</th>
+                            <th>Event Name</th>
+                            <th>Dates Requested</th>
+                            <th>Guests</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${waitlist.map(w => `
+                            <tr>
+                                <td style="font-weight:700;">${w.room_name || '—'}</td>
+                                <td style="font-weight:600;">${w.customer_name}</td>
+                                <td style="color:var(--text-muted);">${w.customer_phone || '—'}</td>
+                                <td>${w.event_name}</td>
+                                <td style="font-size:13px;color:var(--text-muted);">${formatDate(w.date_start)} ${w.date_end ? '→ ' + formatDate(w.date_end) : ''}</td>
+                                <td>${w.num_guests || '—'}</td>
+                                <td>
+                                    <button class="btn btn-danger btn-sm" onclick="deleteWaitlistEntry(${w.id})">
+                                        <i class="fa-solid fa-xmark" style="margin-right:5px;"></i>Remove
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `}
+    </div>
+
     <div class="card">
         <div class="section-header">
             <div><h2>All Bookings</h2><p>${store.data.reservations.length} records in database</p></div>
@@ -989,8 +1133,16 @@ function renderEvents(c) {
 }
 
 function renderRooms(c) {
-    const { eventRooms } = store.data;
+    const { eventRooms, maintenanceTasks } = store.data;
     const icons = { Banquet: 'fa-champagne-glasses', Meeting: 'fa-briefcase', Outdoor: 'fa-tree', Conference: 'fa-people-group' };
+
+    // Group tasks by room
+    const tasksByRoom = {};
+    (maintenanceTasks || []).forEach(t => {
+        if (!tasksByRoom[t.room_id]) tasksByRoom[t.room_id] = [];
+        tasksByRoom[t.room_id].push(t);
+    });
+
     c.innerHTML = `
     <div class="section-header">
         <div>
@@ -1001,31 +1153,91 @@ function renderRooms(c) {
             <i class="fa-solid fa-plus" style="margin-right:8px;"></i>Add Venue
         </button>
     </div>
-    ${eventRooms.length === 0 ? `<div class="card"><div class="empty-state"><i class="fa-solid fa-door-closed"></i><h3>No Venues in Database</h3><p>Add your first venue to get started</p></div></div>` : ''}
-    <div class="rooms-grid">
-        ${eventRooms.map(r => `
-        <div class="room-card">
-            <div class="room-icon"><i class="fa-solid ${icons[r.type] || 'fa-building'}"></i></div>
-            <div class="room-name">${r.name}</div>
-            <div class="room-price">${formatCurrency(r.price_per_day)} <span style="font-size:13px;font-weight:400;color:var(--text-muted);">/ day</span></div>
-            <div class="room-meta">
-                <span><i class="fa-solid fa-users" style="color:var(--primary);margin-right:5px;"></i>${r.capacity} guests</span>
-                <span><i class="fa-solid fa-tag" style="color:var(--primary);margin-right:5px;"></i>${r.type}</span>
+    
+    <div style="display:grid; grid-template-columns: 1fr 340px; gap: 24px; align-items: start;">
+        <div>
+            ${eventRooms.length === 0 ? `<div class="card"><div class="empty-state"><i class="fa-solid fa-door-closed"></i><h3>No Venues in Database</h3><p>Add your first venue to get started</p></div></div>` : ''}
+            <div class="rooms-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">
+                ${eventRooms.map(r => `
+                <div class="room-card">
+                    <div class="room-icon"><i class="fa-solid ${icons[r.type] || 'fa-building'}"></i></div>
+                    <div class="room-name">${r.name}</div>
+                    <div class="room-price">${formatCurrency(r.price_per_day)} <span style="font-size:13px;font-weight:400;color:var(--text-muted);">/ day</span></div>
+                    <div class="room-meta">
+                        <span><i class="fa-solid fa-users" style="color:var(--primary);margin-right:5px;"></i>${r.capacity} guests</span>
+                        <span><i class="fa-solid fa-tag" style="color:var(--primary);margin-right:5px;"></i>${r.type}</span>
+                    </div>
+                    <div style="margin-top:12px;">${statusBadge(r.status)}</div>
+                    <div class="room-actions">
+                        <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center;" onclick="openReservationModal()">
+                            <i class="fa-solid fa-calendar-plus" style="margin-right:6px;"></i>Book
+                        </button>
+                        <button class="btn btn-outline btn-sm" onclick='openRoomModal(${JSON.stringify(r)})'>
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteRoom(${r.id})">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </div>`).join('')}
             </div>
-            <div style="margin-top:12px;">${statusBadge(r.status)}</div>
-            <div class="room-actions">
-                <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center;" onclick="openReservationModal()">
-                    <i class="fa-solid fa-calendar-plus" style="margin-right:6px;"></i>Book
-                </button>
-                <button class="btn btn-outline btn-sm" onclick='openRoomModal(${JSON.stringify(r)})'>
-                    <i class="fa-solid fa-pen"></i>
-                </button>
-                <button class="btn btn-danger btn-sm" onclick="deleteRoom(${r.id})">
-                    <i class="fa-solid fa-trash"></i>
-                </button>
-            </div>
-        </div>`).join('')}
+        </div>
+        
+        <!-- Checklist Side Card -->
+        <div class="card">
+            <h3 style="margin-bottom:12px;"><i class="fa-solid fa-screwdriver-wrench" style="color:var(--primary);margin-right:10px;"></i>Venue Setup & Cleaning</h3>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:20px;line-height:1.4;">Manage setup buffers and cleaning checklists before venues go back to Available.</p>
+            
+            ${eventRooms.length === 0 ? '<div style="font-size:13px;color:var(--text-muted);font-style:italic;">No venues registered yet.</div>' : ''}
+            
+            ${eventRooms.map(room => {
+                const roomTasks = tasksByRoom[room.id] || [];
+                const completed = roomTasks.filter(t => t.status === 'Completed');
+                
+                return `
+                <div style="margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid var(--glass-border); &:last-child { border: none; }">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <strong style="font-size:13px;color:var(--text-bright);">${room.name}</strong>
+                        <span style="font-size:11px;background:rgba(0,242,254,0.1);color:var(--primary);padding:2px 6px;border-radius:8px;font-weight:600;">
+                            ${completed.length}/${roomTasks.length} Done
+                        </span>
+                    </div>
+                    ${roomTasks.length === 0 ? `
+                        <div style="font-size:12px;color:var(--text-muted);font-style:italic;margin-top:4px;">No active setup or cleaning tasks.</div>
+                    ` : `
+                        <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">
+                            ${roomTasks.map(task => {
+                                const isChecked = task.status === 'Completed';
+                                return `
+                                <label style="display:flex; align-items:flex-start; gap:8px; font-size:12px; cursor:pointer; user-select:none; line-height:1.3;">
+                                    <input type="checkbox" ${isChecked ? 'checked' : ''} 
+                                        onchange="toggleMaintenanceTask(${task.id}, this.checked)"
+                                        style="width:14px; height:14px; margin-top:1px; cursor:pointer;">
+                                    <span style="${isChecked ? 'text-decoration:line-through;color:var(--text-muted);' : ''}">${task.task_name}</span>
+                                </label>
+                                `;
+                            }).join('')}
+                        </div>
+                    `}
+                </div>
+                `;
+            }).join('')}
+        </div>
     </div>`;
+}
+
+async function toggleMaintenanceTask(id, isChecked) {
+    const status = isChecked ? 'Completed' : 'Pending';
+    try {
+        await store.fetchAPI(`/maintenance-tasks/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status })
+        });
+        await store.refreshData();
+        showToast(`Task marked as ${status} ✓`, 'success');
+    } catch (err) {
+        showToast('Failed to update task: ' + err.message, 'danger');
+    }
 }
 
 function renderAgreement(c) {
@@ -1072,9 +1284,290 @@ function renderAgreement(c) {
     </div>`;
 }
 
-function printAgreement(id, event, customer) {
-    showToast(`Agreement AGR-${String(id).padStart(4,'0')} sent to printer ✓`, 'success');
-    // Could open a print window in a real system
+let _currentSigningReservationId = null;
+let _sigCanvas = null;
+let _sigCtx = null;
+let _isDrawing = false;
+
+function initSignatureCapture(reservationId) {
+    _currentSigningReservationId = reservationId;
+    openModal('signatureModal');
+    
+    if (!_sigCanvas) {
+        _sigCanvas = $('sigCanvas');
+        _sigCtx = _sigCanvas.getContext('2d');
+        
+        _sigCtx.strokeStyle = '#ffffff';
+        _sigCtx.lineWidth = 3;
+        _sigCtx.lineCap = 'round';
+        
+        _sigCanvas.addEventListener('mousedown', startDrawing);
+        _sigCanvas.addEventListener('mousemove', draw);
+        window.addEventListener('mouseup', stopDrawing);
+        
+        _sigCanvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = _sigCanvas.getBoundingClientRect();
+            _sigCtx.beginPath();
+            _sigCtx.moveTo(touch.clientX - rect.left, touch.clientY - rect.top);
+            _isDrawing = true;
+        }, { passive: false });
+        
+        _sigCanvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!_isDrawing) return;
+            const touch = e.touches[0];
+            const rect = _sigCanvas.getBoundingClientRect();
+            _sigCtx.lineTo(touch.clientX - rect.left, touch.clientY - rect.top);
+            _sigCtx.stroke();
+        }, { passive: false });
+        
+        _sigCanvas.addEventListener('touchend', () => { _isDrawing = false; });
+        
+        $('saveSignatureBtn').addEventListener('click', saveSignature);
+    }
+    clearCanvas();
+}
+
+function startDrawing(e) {
+    const rect = _sigCanvas.getBoundingClientRect();
+    _sigCtx.beginPath();
+    _sigCtx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+    _isDrawing = true;
+}
+
+function draw(e) {
+    if (!_isDrawing) return;
+    const rect = _sigCanvas.getBoundingClientRect();
+    _sigCtx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+    _sigCtx.stroke();
+}
+
+function stopDrawing() {
+    _isDrawing = false;
+}
+
+function clearCanvas() {
+    if (_sigCtx && _sigCanvas) {
+        _sigCtx.clearRect(0, 0, _sigCanvas.width, _sigCanvas.height);
+    }
+}
+
+async function saveSignature() {
+    if (!_currentSigningReservationId) return;
+    const dataUrl = _sigCanvas.toDataURL();
+    try {
+        await store.fetchAPI(`/reservations/${_currentSigningReservationId}/signature`, {
+            method: 'PATCH',
+            body: JSON.stringify({ signature_data: dataUrl })
+        });
+        showToast('E-Signature saved to database ✓', 'success');
+        closeModal('signatureModal');
+        await store.refreshData();
+        printAgreement(_currentSigningReservationId);
+    } catch (err) {
+        showToast('Failed to save signature: ' + err.message, 'danger');
+    }
+}
+
+function printAgreement(id) {
+    const r = store.data.reservations.find(res => res.id === id);
+    if (!r) { showToast('Reservation not found', 'danger'); return; }
+
+    if (!r.signature_data) {
+        initSignatureCapture(id);
+        return;
+    }
+
+    const w = window.open('', '_blank');
+    const currency = sym();
+    const dateFormatted = formatDate(r.date_start);
+    const dateEndFormatted = r.date_end ? formatDate(r.date_end) : dateFormatted;
+
+    w.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Agreement - AGR-${String(r.id).padStart(4, '0')}</title>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+            <style>
+                body { font-family: 'Outfit', sans-serif; color: #222; padding: 40px; line-height: 1.6; }
+                .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+                .header h1 { margin: 0; font-size: 28px; letter-spacing: 2px; text-transform: uppercase; }
+                .header p { margin: 5px 0 0 0; color: #666; font-size: 14px; }
+                .agreement-title { text-align: center; font-size: 20px; font-weight: bold; margin-bottom: 30px; text-transform: uppercase; text-decoration: underline; }
+                
+                /* Borderless tables reset */
+                .meta-table, .signature-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    border: none !important;
+                    margin-bottom: 30px;
+                    background: transparent !important;
+                }
+                .meta-table td, .signature-table td {
+                    border: none !important;
+                    padding: 0 !important;
+                    background: transparent !important;
+                    text-align: left;
+                    vertical-align: top;
+                }
+                
+                .meta-table {
+                    border-bottom: 1px solid #eee;
+                    font-weight: bold;
+                    font-size: 14px;
+                }
+                .meta-table td {
+                    padding: 0 0 10px 0 !important;
+                }
+                
+                .info-table { width: 100%; border: none; margin-bottom: 30px; border-collapse: collapse; }
+                .info-table td { border: none !important; padding: 10px 20px 10px 0 !important; background: transparent !important; }
+                .info-table td.right-col { border-left: 1px solid #eee !important; padding: 10px 0 10px 20px !important; }
+                
+                .section-title { font-weight: bold; font-size: 16px; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 10px; text-transform: uppercase; }
+                
+                table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+                th { background-color: #f5f5f5; }
+                
+                .terms { font-size: 12px; color: #555; border-top: 1px solid #eee; padding-top: 20px; margin-top: 50px; }
+                
+                /* Signature section styles */
+                .signature-table {
+                    margin-top: 80px;
+                }
+                .signature-table td {
+                    width: 43%;
+                    vertical-align: bottom;
+                    text-align: center;
+                }
+                .signature-table td.spacer {
+                    width: 14%;
+                }
+                .signature-space {
+                    height: 90px;
+                    text-align: center;
+                    font-size: 0;
+                    line-height: 90px;
+                    margin-bottom: 10px;
+                }
+                .signature-space img {
+                    max-height: 90px;
+                    max-width: 240px;
+                    vertical-align: bottom;
+                    display: inline-block;
+                    filter: invert(1);
+                }
+                .signature-line-text {
+                    border-top: 1px solid #000;
+                    padding-top: 8px;
+                    font-size: 14px;
+                    line-height: 1.5;
+                }
+                
+                .print-btn-container { text-align: center; margin-top: 40px; }
+                @media print {
+                    body { padding: 20px; }
+                    .print-btn-container { display: none; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>${store.data.settings.business_name || 'ASCENDIA BANQUETS'}</h1>
+                <p>${store.data.settings.business_name || 'ASCENDIA BANQUETS'} · General Agreement</p>
+            </div>
+            
+            <div class="agreement-title">${(store.data.settings.business_name || 'ASCENDIA BANQUETS').toUpperCase()} AGREEMENT</div>
+            
+            <table class="meta-table">
+                <tr>
+                    <td style="text-align: left;">Agreement Reference: AGR-${String(r.id).padStart(4, '0')}</td>
+                    <td style="text-align: right;">Date Generated: ${new Date().toLocaleDateString('en-GB')}</td>
+                </tr>
+            </table>
+
+            <table class="info-table">
+                <tr>
+                    <td style="width: 50%; vertical-align: top;">
+                        <div class="section-title">Client Information</div>
+                        <div style="line-height: 1.8; font-size: 14px;">
+                            <strong>Name:</strong> ${r.customer_name}<br>
+                            <strong>Contact Phone:</strong> ${r.customer_phone || '—'}<br>
+                        </div>
+                    </td>
+                    <td class="right-col" style="width: 50%; vertical-align: top;">
+                        <div class="section-title">Venue & Event Details</div>
+                        <div style="line-height: 1.8; font-size: 14px;">
+                            <strong>Venue / Room:</strong> ${r.room_name || 'General Venue'}<br>
+                            <strong>Event Name:</strong> ${r.event_name}<br>
+                            <strong>Date of Event:</strong> ${dateFormatted} to ${dateEndFormatted}<br>
+                            <strong>Number of Guests:</strong> ${r.num_guests || '—'}
+                        </div>
+                    </td>
+                </tr>
+            </table>
+
+            <div class="section-title">Billing & Financial Breakdown</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Description</th>
+                        <th>Price Rate</th>
+                        <th>Total Price</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Banquet Hall / Event Room reservation for dates: ${dateFormatted} to ${dateEndFormatted}</td>
+                        <td>${formatCurrency(r.price_per_day)} / day</td>
+                        <td style="font-weight: bold; color: #000;">${formatCurrency(r.total_price)}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="terms">
+                <strong>TERMS & CONDITIONS:</strong><br>
+                1. The client agrees to pay the total reservation fee at least 7 days before the event starts.<br>
+                2. Cancellations made within 48 hours of the event are non-refundable. Cancellations prior to this are eligible for 50% refund.<br>
+                3. The client is responsible for any damage caused to properties or venues during the event.<br>
+                4. Ascendia Hotel guarantees the reserved room will be set up and prepared according to specification detailed in internal notes.
+            </div>
+
+            <table class="signature-table">
+                <tr>
+                    <td>
+                        <div class="signature-space"></div>
+                        <div class="signature-line-text">
+                            Authorized Signatory<br>
+                            <span style="font-size: 12px; color: #666;">${store.data.settings.business_name || 'ASCENDIA BANQUETS'}</span>
+                        </div>
+                    </td>
+                    <td class="spacer"></td>
+                    <td>
+                        <div class="signature-space">
+                            <img src="${r.signature_data}" alt="Customer Signature">
+                        </div>
+                        <div class="signature-line-text">
+                            <strong>${r.customer_name}</strong><br>
+                            <span style="font-size: 12px; color: #666;">Customer Signature (E-Signed)</span>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+
+            <div class="print-btn-container">
+                <button onclick="window.print();" style="padding: 10px 20px; font-size: 16px; background: #00f2fe; border: none; border-radius: 6px; cursor: pointer; color: black; font-weight: bold;">Print Document</button>
+            </div>
+        </body>
+        </html>
+    `);
+    w.document.close();
 }
 
 function renderApproval(c) {
@@ -1253,7 +1746,7 @@ function renderSettings(c) {
                 <select id="set_default_status"><option value="Pending">Pending</option><option value="Confirmed" selected>Confirmed</option></select>
             </div>
             <div style="display:flex;gap:12px;">
-                <button class="btn btn-primary" onclick="showToast('Settings saved ✓','success')">
+                <button class="btn btn-primary" onclick="saveSettings()">
                     <i class="fa-solid fa-floppy-disk" style="margin-right:8px;"></i>Save Settings
                 </button>
             </div>
@@ -1287,4 +1780,21 @@ function renderSettings(c) {
             Both modules share the same <code style="color:var(--primary);">pos_data.db</code> SQLite file. All CRUD operations are persisted in real-time.
         </p>
     </div>`;
+}
+
+async function saveSettings() {
+    const businessName = $('set_name').value.trim();
+    const currencySymbol = $('set_currency').value.trim();
+    if (!businessName) { showToast('Business name cannot be empty', 'danger'); return; }
+    try {
+        await store.fetchAPI('/settings', {
+            method: 'PUT',
+            body: JSON.stringify({ business_name: businessName, currency_symbol: currencySymbol })
+        });
+        showToast('Settings saved successfully ✓', 'success');
+        await store.refreshData();
+        navigate('/settings');
+    } catch (err) {
+        showToast('Failed to save settings: ' + err.message, 'danger');
+    }
 }

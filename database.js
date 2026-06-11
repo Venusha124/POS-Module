@@ -143,7 +143,39 @@ db.serialize(() => {
         num_guests INTEGER,
         status TEXT,
         total_price REAL,
+        signature_data TEXT,
         FOREIGN KEY(room_id) REFERENCES event_rooms(id)
+    )`, (err) => {
+        if (!err) {
+            db.run("ALTER TABLE reservations ADD COLUMN signature_data TEXT", (err) => {});
+        }
+    });
+
+    // 13. Waitlist Queue
+    db.run(`CREATE TABLE IF NOT EXISTS waitlist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_id INTEGER,
+        customer_name TEXT,
+        customer_phone TEXT,
+        date_start TEXT,
+        date_end TEXT,
+        num_guests INTEGER,
+        event_name TEXT,
+        notes TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(room_id) REFERENCES event_rooms(id)
+    )`);
+
+    // 14. Maintenance Tasks
+    db.run(`CREATE TABLE IF NOT EXISTS maintenance_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_id INTEGER,
+        reservation_id INTEGER,
+        task_name TEXT,
+        status TEXT DEFAULT 'Pending',
+        due_date TEXT,
+        FOREIGN KEY(room_id) REFERENCES event_rooms(id),
+        FOREIGN KEY(reservation_id) REFERENCES reservations(id)
     )`);
 
     // Seed Data (if empty)

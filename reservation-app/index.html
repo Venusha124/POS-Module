@@ -335,6 +335,24 @@
         </div>
     </div>
 
+    <!-- Signature Canvas Modal -->
+    <div class="modal-overlay" id="signatureModal">
+        <div class="modal-content" style="max-width:500px;">
+            <button class="modal-close" onclick="closeModal('signatureModal')"><i class="fa-solid fa-xmark"></i></button>
+            <h3><i class="fa-solid fa-signature" style="color:var(--primary); margin-right:10px;"></i>Customer Signature</h3>
+            <p style="font-size:13px; color:var(--text-muted); margin-bottom:15px;">Please sign below inside the box:</p>
+            <div style="background:#111; border:2px dashed var(--glass-border); border-radius:12px; padding:5px; margin-bottom:15px;">
+                <canvas id="sigCanvas" width="450" height="200" style="display:block; cursor:crosshair; width:100%; height:200px; touch-action:none;"></canvas>
+            </div>
+            <div class="modal-actions" style="margin-top:20px;">
+                <button class="btn btn-outline" onclick="clearCanvas()">Clear</button>
+                <button class="btn btn-primary" id="saveSignatureBtn" style="flex:1; justify-content:center;">
+                    <i class="fa-solid fa-check" style="margin-right:8px;"></i>Save & Print
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div id="toast" class="toast" style="display:none;"></div>
 
